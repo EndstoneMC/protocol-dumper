@@ -9,21 +9,22 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/basic_file_sink.h>
 
+#include "common/NetworkSystem.h"
 #include "common/Packet.h"
 #include "config.h"
+#include "symbol.h"
 #include "reader.h"
 #include "generator.h"
 
-static Config g_config;
-
 // --- NetworkSystem::update hook ---
 
-using NetworkSystemUpdateFn = void (*)(void *self, const void *userList);
-static NetworkSystemUpdateFn orig_update = nullptr;
-static void *captured_network_system = nullptr;
+static NetworkSystem *captured_network_system = nullptr;
 static HANDLE capture_event = nullptr;
 
-static void hooked_update(void *self, const void *userList)
+// Original function pointer — funchook replaces this with the trampoline
+static void (*orig_update)(NetworkSystem *, const std::vector<WeakEntityRef> *) = nullptr;
+
+static void hooked_update(NetworkSystem *self, const std::vector<WeakEntityRef> *userList)
 {
     if (!captured_network_system) {
         captured_network_system = self;
@@ -47,19 +48,20 @@ DWORD WINAPI DumpThread(LPVOID param)
 
     spdlog::info("=== BDS Packet Schema Dump ===");
 
-    if (!g_config.load(exe_dir / "config.json")) {
+    if (!Config::instance().load(exe_dir / "config.json")) {
         FreeLibraryAndExitThread(static_cast<HMODULE>(param), 1);
     }
 
     // --- Hook NetworkSystem::update to capture instance ---
 
-    auto *update_addr = g_config.resolve("NetworkSystem::update");
+    auto *update_addr = resolveSymbol(
+        "?update@NetworkSystem@@QEAAXPEBVWeakEntityRef@@@Z");
     if (!update_addr) {
         FreeLibraryAndExitThread(static_cast<HMODULE>(param), 1);
     }
 
     capture_event = CreateEventA(nullptr, TRUE, FALSE, nullptr);
-    orig_update = reinterpret_cast<NetworkSystemUpdateFn>(update_addr);
+    orig_update = reinterpret_cast<decltype(orig_update)>(update_addr);
 
     funchook_t *hook = funchook_create();
     if (funchook_prepare(hook, reinterpret_cast<void **>(&orig_update),
@@ -75,28 +77,14 @@ DWORD WINAPI DumpThread(LPVOID param)
     funchook_uninstall(hook, 0);
     funchook_destroy(hook);
 
-    spdlog::info("Captured NetworkSystem @ {}", captured_network_system);
+    spdlog::info("Captured NetworkSystem @ {}", static_cast<void *>(captured_network_system));
 
-    // --- Read ReflectionCtx from NetworkSystem ---
+    // --- Get ReflectionCtx ---
 
-    auto ctx_offset = g_config.findOffset("NetworkSystem::mReflectionCtx");
-    if (ctx_offset == 0) {
-        spdlog::error("NetworkSystem::mReflectionCtx offset not configured");
-        FreeLibraryAndExitThread(static_cast<HMODULE>(param), 1);
-    }
-
-    auto *ctx = *reinterpret_cast<cereal::ReflectionCtx **>(
-        static_cast<char *>(captured_network_system) + ctx_offset);
-    spdlog::info("ReflectionCtx @ {}", static_cast<void *>(ctx));
+    auto &ctx = captured_network_system->getPacketReflectionCtx();
+    spdlog::info("ReflectionCtx @ {}", static_cast<const void *>(&ctx));
 
     // --- Enumerate packets ---
-
-    auto *create_addr = g_config.resolve("MinecraftPackets::createPacket");
-    if (!create_addr) {
-        FreeLibraryAndExitThread(static_cast<HMODULE>(param), 1);
-    }
-
-    auto createPacket = reinterpret_cast<CreatePacketFn>(create_addr);
 
     struct PacketInfo { int id; std::string name; };
     std::vector<PacketInfo> packets;
@@ -104,7 +92,7 @@ DWORD WINAPI DumpThread(LPVOID param)
     for (int id = 0; ; id++) {
         if (id >= 200 && id <= 299) continue;
         try {
-            auto pkt = createPacket(id);
+            auto pkt = MinecraftPackets::createPacket(id);
             if (!pkt) break;
             packets.push_back({id, std::string(pkt->getName())});
         }
@@ -116,7 +104,7 @@ DWORD WINAPI DumpThread(LPVOID param)
     // --- Extract schemas ---
 
     CerealSchemaReader reader;
-    if (!reader.init(ctx, g_config)) {
+    if (!reader.init(const_cast<cereal::ReflectionCtx *>(&ctx))) {
         FreeLibraryAndExitThread(static_cast<HMODULE>(param), 1);
     }
 

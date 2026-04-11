@@ -23,19 +23,17 @@ FetchContent_Declare(argparse
 
 FetchContent_Declare(json
         URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
-        URL_HASH SHA256=d6c65aca6b1ed68e7a182f4757f0f1b0b77571b1c626571dbbfaf2df79171d05
+        URL_HASH SHA256=d6c65aca6b1ed68e7a182f4757257b107ae403032760ed6ef121c9d55e81757d
 )
 
 FetchContent_Declare(funchook
-        GIT_REPOSITORY https://github.com/kubo/funchook.git
-        GIT_TAG v1.1.3
-        GIT_SHALLOW TRUE
+        URL https://github.com/kubo/funchook/archive/refs/tags/v1.1.3.tar.gz
+        URL_HASH SHA256=4b0195e70524237e222dc34c53ac25e12677bb936e64eefe33189931688444c4
 )
 
 FetchContent_Declare(libhat
-        GIT_REPOSITORY https://github.com/BasedInc/libhat.git
-        GIT_TAG main
-        GIT_SHALLOW TRUE
+        URL https://github.com/BasedInc/libhat/archive/refs/tags/v0.9.0.tar.gz
+        URL_HASH SHA256=b1e9e16e804d9f9bec7ccc4df4b8a1cdd281b6ec0c1377244ab28a7944a3e13a
 )
 
 FetchContent_MakeAvailable(entt spdlog argparse json funchook libhat)
@@ -43,8 +41,12 @@ FetchContent_MakeAvailable(entt spdlog argparse json funchook libhat)
 add_library(proto_dumper SHARED
         src/main.cpp
         src/config.cpp
+        src/symbol.cpp
         src/generator.cpp
         src/reader.cpp
+        src/common/NetworkSystem.cpp
+        src/common/Packet.cpp
+        src/cereal/schema/BasicSchema.cpp
 )
 target_link_libraries(proto_dumper PRIVATE EnTT::EnTT spdlog::spdlog nlohmann_json::nlohmann_json funchook libhat::libhat)
 

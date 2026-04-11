@@ -46,5 +46,7 @@ private:
 };
 static_assert(sizeof(Packet) == 48);
 
-// Factory function — resolved at runtime via sigscan
-using CreatePacketFn = std::shared_ptr<Packet> (*)(int);
+// Mirrors: MinecraftPackets::createPacket
+namespace MinecraftPackets {
+std::shared_ptr<Packet> createPacket(int id);
+}

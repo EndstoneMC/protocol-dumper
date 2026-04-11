@@ -2,7 +2,7 @@
   "executable": "bedrock_server.exe",
   "signatures": [
     {
-      "name": "NetworkSystem::update",
+      "name": "?update@NetworkSystem@@QEAAXPEBVWeakEntityRef@@@Z",
       "module": "bedrock_server.exe",
       "pattern": "",
       "offsets": [],
@@ -10,7 +10,7 @@
       "relative": false
     },
     {
-      "name": "MinecraftPackets::createPacket",
+      "name": "?getPacketReflectionCtx@NetworkSystem@@QEBAAEBVReflectionCtx@cereal@@XZ",
       "module": "bedrock_server.exe",
       "pattern": "",
       "offsets": [],
@@ -18,7 +18,7 @@
       "relative": false
     },
     {
-      "name": "BasicSchema::lookup",
+      "name": "?createPacket@MinecraftPackets@@SA?AV?$shared_ptr@VPacket@@@std@@W4MinecraftPacketIds@@@Z",
       "module": "bedrock_server.exe",
       "pattern": "",
       "offsets": [],
@@ -26,18 +26,20 @@
       "relative": false
     },
     {
-      "name": "BasicSchema::description",
+      "name": "?lookup@BasicSchema@internal@cereal@@SAAEBVBasicSchema123@AEBVmeta_ctx@entt@@Utype_info@5@@Z",
       "module": "bedrock_server.exe",
       "pattern": "",
       "offsets": [],
       "extra": 0,
       "relative": false
-    }
-  ],
-  "offsets": [
+    },
     {
-      "name": "NetworkSystem::mReflectionCtx",
-      "value": 0
+      "name": "?description@BasicSchema@internal@cereal@@QEBA?AUSchemaDescription@3@AEBUReflectionContext@23@UDescriptionConfig@3@@Z",
+      "module": "bedrock_server.exe",
+      "pattern": "",
+      "offsets": [],
+      "extra": 0,
+      "relative": false
     }
   ]
 }

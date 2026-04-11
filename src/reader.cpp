@@ -4,17 +4,19 @@
 
 #include <spdlog/spdlog.h>
 
+using cereal::internal::BasicSchema;
+
 std::optional<cereal::SchemaDescription> CerealSchemaReader::extractSchema(
     entt::type_info info)
 {
     auto &meta_ctx = ctx_->internal().mMetaCtx;
     try {
-        const auto &schema = basicSchemaLookup_(meta_ctx, info);
+        const auto &schema = BasicSchema::lookup(meta_ctx, info);
         cereal::DescriptionConfig config{};
         config.mContextArea = cereal::ContextArea::ALL;
         config.mExtraInfo = cereal::DescriptionConfig::Extra::networkingExtraInfo;
         config.mIsTopLevel = true;
-        return basicSchemaDesc_(&schema, ctx_->internal(), config);
+        return schema.description(ctx_->internal(), config);
     }
     catch (...) {
         spdlog::error("Exception extracting schema for {}", std::string(info.name()));
@@ -22,7 +24,7 @@ std::optional<cereal::SchemaDescription> CerealSchemaReader::extractSchema(
     }
 }
 
-bool CerealSchemaReader::init(cereal::ReflectionCtx *ctx, const Config &config)
+bool CerealSchemaReader::init(cereal::ReflectionCtx *ctx)
 {
     ctx_ = ctx;
     if (!ctx_) {
@@ -30,18 +32,6 @@ bool CerealSchemaReader::init(cereal::ReflectionCtx *ctx, const Config &config)
         return false;
     }
 
-    auto *lookup_addr = config.resolve("BasicSchema::lookup");
-    auto *desc_addr = config.resolve("BasicSchema::description");
-
-    if (!lookup_addr || !desc_addr) {
-        spdlog::error("Failed to resolve BasicSchema functions");
-        return false;
-    }
-
-    basicSchemaLookup_ = reinterpret_cast<BasicSchemaLookupFn>(lookup_addr);
-    basicSchemaDesc_ = reinterpret_cast<BasicSchemaDescFn>(desc_addr);
-
-    // Build name -> type_info index
     auto &meta_ctx = ctx_->internal().mMetaCtx;
     for (auto &&[id, meta_type] : entt::resolve(meta_ctx)) {
         auto info = meta_type.info();
