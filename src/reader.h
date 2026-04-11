@@ -9,6 +9,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <unordered_map>
 
 // Reads cereal SchemaDescription trees from BDS's live ReflectionCtx.
 //
@@ -60,7 +61,9 @@ private:
     BasicSchemaDescFn basicSchemaDesc_ = nullptr;
 
     cereal::ReflectionCtx *ctx_ = nullptr;
+    std::unordered_map<std::string, entt::type_info> type_index_;
     LogFn log_;
 
     void log(const std::string &msg);
+    std::optional<cereal::SchemaDescription> extractSchema(entt::type_info info);
 };

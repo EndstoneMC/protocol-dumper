@@ -56,8 +56,10 @@ std::string ProtoGenerator::toSnakeCase(const std::string &name)
         if (c == '_') { if (!prev) collapsed += c; prev = true; }
         else { collapsed += c; prev = false; }
     }
-    while (!collapsed.empty() && collapsed.front() == '_') collapsed.erase(collapsed.begin());
-    while (!collapsed.empty() && collapsed.back() == '_') collapsed.pop_back();
+    auto start = collapsed.find_first_not_of('_');
+    auto end = collapsed.find_last_not_of('_');
+    if (start == std::string::npos) { return "unknown"; }
+    collapsed = collapsed.substr(start, end - start + 1);
     if (collapsed.empty()) collapsed = "unknown";
     return collapsed;
 }
@@ -116,18 +118,22 @@ std::string ProtoGenerator::reflectedTypeToProto(ReflectedType type)
 std::string ProtoGenerator::describeConstraints(const cereal::internal::ConstraintDescription &c)
 {
     std::ostringstream ss;
+    bool first = true;
+    auto sep = [&] { if (!first) ss << ", "; first = false; };
+
     if (c.mMinimum || c.mMaximum) {
+        sep();
         ss << "range: [";
         if (c.mMinimum) ss << *c.mMinimum; else ss << "-inf";
         ss << ", ";
         if (c.mMaximum) ss << *c.mMaximum; else ss << "inf";
         ss << "]";
     }
-    if (c.mMinLength) { if (!ss.str().empty()) ss << ", "; ss << "min_length: " << *c.mMinLength; }
-    if (c.mMaxLength) { if (!ss.str().empty()) ss << ", "; ss << "max_length: " << *c.mMaxLength; }
-    if (c.mMinItems)  { if (!ss.str().empty()) ss << ", "; ss << "min_items: " << *c.mMinItems; }
-    if (c.mMaxItems)  { if (!ss.str().empty()) ss << ", "; ss << "max_items: " << *c.mMaxItems; }
-    if (c.mPattern)   { if (!ss.str().empty()) ss << ", "; ss << "pattern: " << *c.mPattern; }
+    if (c.mMinLength) { sep(); ss << "min_length: " << *c.mMinLength; }
+    if (c.mMaxLength) { sep(); ss << "max_length: " << *c.mMaxLength; }
+    if (c.mMinItems)  { sep(); ss << "min_items: " << *c.mMinItems; }
+    if (c.mMaxItems)  { sep(); ss << "max_items: " << *c.mMaxItems; }
+    if (c.mPattern)   { sep(); ss << "pattern: " << *c.mPattern; }
     return ss.str();
 }
 
@@ -222,18 +228,23 @@ void ProtoGenerator::emitPacketFile(const PacketEntry &packet,
     out << "syntax = \"proto3\";\n";
     out << "package bedrock.protocol;\n\n";
 
-    // Check if we need common_types import
-    bool needs_import = false;
-    if (packet.schema.mMembers) {
-        for (const auto &[name, member] : *packet.schema.mMembers) {
-            if (member.mType && *member.mType == ReflectedType::Object &&
-                member.mName && isSharedType(*member.mName)) {
-                needs_import = true;
-                break;
+    // Recursively check if any nested type references a shared type
+    std::function<bool(const SchemaDescription &)> needsImport =
+        [&](const SchemaDescription &desc) -> bool {
+            if (!desc.mMembers) return false;
+            for (const auto &[n, m] : *desc.mMembers) {
+                if (m.mType && *m.mType == ReflectedType::Object &&
+                    m.mName && isSharedType(*m.mName))
+                    return true;
+                if (m.mType && *m.mType == ReflectedType::Object && needsImport(m))
+                    return true;
+                if (m.mValueType && needsImport(*m.mValueType)) return true;
+                if (m.mMappedType && needsImport(*m.mMappedType)) return true;
             }
-        }
-    }
-    if (needs_import) {
+            return false;
+        };
+
+    if (needsImport(packet.schema)) {
         out << "import \"common_types.proto\";\n\n";
     }
 
@@ -391,17 +402,18 @@ void ProtoGenerator::emitEnum(std::ostream &out, const std::string &enum_name,
     for (const auto &ev : values) {
         if (ev.mValue == 0) { has_zero = true; break; }
     }
+    auto toUpper = [](std::string s) {
+        for (char &c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        return s;
+    };
+    std::string prefix = toUpper(toSnakeCase(enum_name));
+
     if (!has_zero) {
-        std::string prefix = toSnakeCase(enum_name);
-        for (char &c : prefix) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
         out << indent(ind + 1) << prefix << "_UNSPECIFIED = 0;\n";
     }
 
     for (const auto &ev : values) {
-        std::string vname = sanitizeName(ev.mName);
-        std::string prefix = toSnakeCase(enum_name);
-        std::string full = prefix + "_" + toSnakeCase(vname);
-        for (char &c : full) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        std::string full = prefix + "_" + toUpper(toSnakeCase(ev.mName));
 
         out << indent(ind + 1) << full << " = " << ev.mValue << ";";
         if (ev.mDescription && !ev.mDescription->empty()) {

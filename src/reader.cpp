@@ -2,30 +2,34 @@
 
 #include <fstream>
 
-// ============================================================================
-// RVAs for cereal functions in BDS
-// These are version-specific.  Update when BDS updates.
+// RVAs for cereal functions in BDS — version-specific.
 // Find via Endstone bedrock_symbols.generated.h or IDA/Ghidra.
-//
-// Symbols (MSVC mangled):
-//   ReflectionCtx::global   ?global@ReflectionCtx@cereal@@SAAEAV12@XZ
-//   BasicSchema::lookup     ?lookup@BasicSchema@internal@cereal@@...
-//   BasicSchema::description ?description@BasicSchema@internal@cereal@@...
-// ============================================================================
-
-// TODO: Fill in actual RVAs from your BDS version's symbol table.
 // Set to 0 to disable cereal extraction (graceful fallback).
 constexpr uintptr_t REFLECTION_CTX_GLOBAL_RVA = 0;
 constexpr uintptr_t BASIC_SCHEMA_LOOKUP_RVA = 0;
 constexpr uintptr_t BASIC_SCHEMA_DESC_RVA = 0;
 
-// ============================================================================
-// init
-// ============================================================================
-
 void CerealSchemaReader::log(const std::string &msg)
 {
     if (log_) log_(msg);
+}
+
+std::optional<cereal::SchemaDescription> CerealSchemaReader::extractSchema(
+    entt::type_info info)
+{
+    auto &meta_ctx = ctx_->internal().mMetaCtx;
+    try {
+        const auto &schema = basicSchemaLookup_(meta_ctx, info);
+        cereal::DescriptionConfig config{};
+        config.mContextArea = cereal::ContextArea::ALL;
+        config.mExtraInfo = cereal::DescriptionConfig::Extra::networkingExtraInfo;
+        config.mIsTopLevel = true;
+        return basicSchemaDesc_(&schema, ctx_->internal(), config);
+    }
+    catch (...) {
+        log("[cereal] ERR: exception extracting schema for " + std::string(info.name()));
+        return std::nullopt;
+    }
 }
 
 bool CerealSchemaReader::init(uintptr_t base_addr, LogFn log_fn)
@@ -61,122 +65,72 @@ bool CerealSchemaReader::init(uintptr_t base_addr, LogFn log_fn)
         return false;
     }
 
-    // Quick sanity check: count registered types
+    // Build name → type_info index for O(1) lookups
     auto &meta_ctx = ctx_->internal().mMetaCtx;
-    int type_count = 0;
-    for ([[maybe_unused]] auto &&[id, type] : entt::resolve(meta_ctx)) {
-        type_count++;
+    for (auto &&[id, meta_type] : entt::resolve(meta_ctx)) {
+        auto info = meta_type.info();
+        std::string name(info.name());
+        type_index_.emplace(std::move(name), info);
     }
-    log("[cereal] ReflectionCtx has " + std::to_string(type_count) + " registered types");
 
+    log("[cereal] ReflectionCtx has " + std::to_string(type_index_.size()) + " registered types");
     return true;
 }
-
-// ============================================================================
-// getSchema
-// ============================================================================
 
 std::optional<cereal::SchemaDescription> CerealSchemaReader::getSchema(
     const std::string &type_name)
 {
-    if (!ctx_ || !basicSchemaLookup_ || !basicSchemaDesc_) return std::nullopt;
+    if (!ctx_) return std::nullopt;
 
-    auto &meta_ctx = ctx_->internal().mMetaCtx;
+    // Exact match
+    auto it = type_index_.find(type_name);
+    if (it != type_index_.end()) return extractSchema(it->second);
 
-    // Search registered types for the one matching type_name
-    for (auto &&[id, meta_type] : entt::resolve(meta_ctx)) {
-        auto info = meta_type.info();
-        std::string_view name = info.name();
-
-        // entt type names may include namespace qualifiers or MSVC decoration.
-        // Check for exact match or suffix match.
-        if (name == type_name ||
-            (name.size() > type_name.size() &&
-             name.substr(name.size() - type_name.size()) == type_name)) {
-
-            try {
-                const auto &schema = basicSchemaLookup_(meta_ctx, info);
-
-                cereal::DescriptionConfig config{};
-                config.mContextArea = cereal::ContextArea::ALL;
-                config.mExtraInfo = cereal::DescriptionConfig::Extra::networkingExtraInfo;
-                config.mIsTopLevel = true;
-
-                return basicSchemaDesc_(&schema, ctx_->internal(), config);
-            }
-            catch (...) {
-                log("[cereal] ERR: exception extracting schema for " +
-                    std::string(name));
-                return std::nullopt;
-            }
+    // Suffix match (handles namespace-qualified names)
+    for (const auto &[name, info] : type_index_) {
+        if (name.size() > type_name.size() &&
+            name.compare(name.size() - type_name.size(), type_name.size(), type_name) == 0) {
+            return extractSchema(info);
         }
     }
 
     return std::nullopt;
 }
 
-// ============================================================================
-// getAllSchemas
-// ============================================================================
-
 std::map<std::string, cereal::SchemaDescription> CerealSchemaReader::getAllSchemas(
     const std::string &name_filter)
 {
     std::map<std::string, cereal::SchemaDescription> results;
-    if (!ctx_ || !basicSchemaLookup_ || !basicSchemaDesc_) return results;
+    if (!ctx_) return results;
 
-    auto &meta_ctx = ctx_->internal().mMetaCtx;
-
-    for (auto &&[id, meta_type] : entt::resolve(meta_ctx)) {
-        auto info = meta_type.info();
-        std::string name(info.name());
-
+    for (const auto &[name, info] : type_index_) {
         if (name.find(name_filter) == std::string::npos) continue;
-
-        try {
-            const auto &schema = basicSchemaLookup_(meta_ctx, info);
-
-            cereal::DescriptionConfig config{};
-            config.mContextArea = cereal::ContextArea::ALL;
-            config.mExtraInfo = cereal::DescriptionConfig::Extra::networkingExtraInfo;
-            config.mIsTopLevel = true;
-
-            results.emplace(name, basicSchemaDesc_(&schema, ctx_->internal(), config));
-        }
-        catch (...) {
-            log("[cereal] ERR: exception extracting schema for " + name);
+        if (auto desc = extractSchema(info)) {
+            results.emplace(name, std::move(*desc));
         }
     }
 
     return results;
 }
 
-// ============================================================================
-// dumpRegisteredTypes — diagnostic: list all types in the meta_ctx
-// ============================================================================
-
 void CerealSchemaReader::dumpRegisteredTypes(const std::filesystem::path &output_dir)
 {
     if (!ctx_) return;
 
     std::ofstream out(output_dir / "cereal_types.txt");
-    out << "=== Registered entt meta types ===\n\n";
-
-    auto &meta_ctx = ctx_->internal().mMetaCtx;
     int count = 0;
 
+    auto &meta_ctx = ctx_->internal().mMetaCtx;
     for (auto &&[id, meta_type] : entt::resolve(meta_ctx)) {
         auto info = meta_type.info();
         out << "[" << count++ << "] id=" << id
             << "  hash=" << info.hash()
             << "  name=" << info.name() << "\n";
 
-        // List data members
         for (auto &&[data_id, data] : meta_type.data()) {
             out << "    data: id=" << data_id;
             if (data.type()) {
-                out << "  type_hash=" << data.type().info().hash()
-                    << "  type_name=" << data.type().info().name();
+                out << "  type=" << data.type().info().name();
             }
             out << "\n";
         }

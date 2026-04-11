@@ -13,8 +13,8 @@
 namespace cereal {
 
 enum class JSONSchemaOutput : bool {
-    Exclude = 0,
-    Include = 1,
+    Exclude = false,
+    Include = true,
 };
 
 namespace internal {
