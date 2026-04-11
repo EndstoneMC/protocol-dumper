@@ -8,7 +8,7 @@
 
 #include <entt/entt.hpp>
 
-#include "../common/Bedrock.h"
+#include "common/EnableNonOwnerReferences.h"
 
 namespace cereal {
 
@@ -28,12 +28,8 @@ struct ReflectionContext {
 }  // namespace internal
 
 struct ReflectionCtx : private internal::ReflectionContext, Bedrock::EnableNonOwnerReferences {
-    internal::ReflectionContext &internal() {
-        return static_cast<internal::ReflectionContext &>(*this);
-    }
-    const internal::ReflectionContext &internal() const {
-        return static_cast<const internal::ReflectionContext &>(*this);
-    }
+    ReflectionContext &internal() { return static_cast<ReflectionContext &>(*this); }
+    [[nodiscard]] const ReflectionContext &internal() const { return static_cast<const ReflectionContext &>(*this); }
 };
 
 }  // namespace cereal

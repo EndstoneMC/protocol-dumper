@@ -19,7 +19,7 @@ namespace internal {
 
 struct Member;  // forward declaration — defined after SchemaDescription
 
-    enum class ReflectedType : int {
+enum class ReflectedType : int {
     Null = 0,
     Bool = 1,
     String = 2,

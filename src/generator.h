@@ -17,21 +17,17 @@ public:
         cereal::SchemaDescription schema;
     };
 
-    void generate(const std::vector<PacketEntry> &packets,
-                  const std::filesystem::path &output_dir);
+    void generate(const std::vector<PacketEntry> &packets, const std::filesystem::path &output_dir);
 
 private:
     void collectCompoundTypes(const cereal::SchemaDescription &desc);
     bool isSharedType(const std::string &type_name) const;
 
     void emitCommonTypes(const std::filesystem::path &output_dir);
-    void emitPacketFile(const PacketEntry &packet,
-                        const std::filesystem::path &output_dir);
+    void emitPacketFile(const PacketEntry &packet, const std::filesystem::path &output_dir);
 
-    void emitMessage(std::ostream &out, const std::string &msg_name,
-                     const cereal::SchemaDescription &desc, int indent);
-    void emitMember(std::ostream &out, const std::string &field_name,
-                    const cereal::internal::Member &member,
+    void emitMessage(std::ostream &out, const std::string &msg_name, const cereal::SchemaDescription &desc, int indent);
+    void emitMember(std::ostream &out, const std::string &field_name, const cereal::internal::Member &member,
                     int &field_num, int indent, const std::string &parent_msg_name);
     void emitEnum(std::ostream &out, const std::string &enum_name,
                   const std::vector<cereal::internal::EnumValue> &values, int indent);

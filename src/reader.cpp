@@ -6,8 +6,7 @@
 
 using cereal::internal::BasicSchema;
 
-std::optional<cereal::SchemaDescription> CerealSchemaReader::extractSchema(
-    entt::type_info info)
+std::optional<cereal::SchemaDescription> CerealSchemaReader::extractSchema(entt::type_info info)
 {
     auto &meta_ctx = ctx_->internal().mMetaCtx;
     try {
@@ -43,13 +42,16 @@ bool CerealSchemaReader::init(cereal::ReflectionCtx *ctx)
     return true;
 }
 
-std::optional<cereal::SchemaDescription> CerealSchemaReader::getSchema(
-    const std::string &type_name)
+std::optional<cereal::SchemaDescription> CerealSchemaReader::getSchema(const std::string &type_name)
 {
-    if (!ctx_) return std::nullopt;
+    if (!ctx_) {
+        return std::nullopt;
+    }
 
     auto it = type_index_.find(type_name);
-    if (it != type_index_.end()) return extractSchema(it->second);
+    if (it != type_index_.end()) {
+        return extractSchema(it->second);
+    }
 
     for (const auto &[name, info] : type_index_) {
         if (name.size() > type_name.size() &&
@@ -61,14 +63,17 @@ std::optional<cereal::SchemaDescription> CerealSchemaReader::getSchema(
     return std::nullopt;
 }
 
-std::map<std::string, cereal::SchemaDescription> CerealSchemaReader::getAllSchemas(
-    const std::string &name_filter)
+std::map<std::string, cereal::SchemaDescription> CerealSchemaReader::getAllSchemas(const std::string &name_filter)
 {
     std::map<std::string, cereal::SchemaDescription> results;
-    if (!ctx_) return results;
+    if (!ctx_) {
+        return results;
+    }
 
     for (const auto &[name, info] : type_index_) {
-        if (name.find(name_filter) == std::string::npos) continue;
+        if (name.find(name_filter) == std::string::npos) {
+            continue;
+        }
         if (auto desc = extractSchema(info)) {
             results.emplace(name, std::move(*desc));
         }
@@ -79,7 +84,9 @@ std::map<std::string, cereal::SchemaDescription> CerealSchemaReader::getAllSchem
 
 void CerealSchemaReader::dumpRegisteredTypes(const std::filesystem::path &output_dir)
 {
-    if (!ctx_) return;
+    if (!ctx_) {
+        return;
+    }
 
     std::ofstream out(output_dir / "cereal_types.txt");
     int count = 0;
@@ -87,9 +94,7 @@ void CerealSchemaReader::dumpRegisteredTypes(const std::filesystem::path &output
     auto &meta_ctx = ctx_->internal().mMetaCtx;
     for (auto &&[id, meta_type] : entt::resolve(meta_ctx)) {
         auto info = meta_type.info();
-        out << "[" << count++ << "] id=" << id
-            << "  hash=" << info.hash()
-            << "  name=" << info.name() << "\n";
+        out << "[" << count++ << "] id=" << id << "  hash=" << info.hash() << "  name=" << info.name() << "\n";
 
         for (auto &&[data_id, data] : meta_type.data()) {
             out << "    data: id=" << data_id;

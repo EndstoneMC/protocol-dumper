@@ -16,10 +16,8 @@ struct NullType {
 
 class DynamicValue {
 public:
-    using Variant = std::variant<
-        internal::NullType, bool, int64_t, double, std::string,
-        std::vector<DynamicValue>,
-        std::unordered_map<std::string, DynamicValue>>;
+    using Variant = std::variant<internal::NullType, bool, int64_t, double, std::string, std::vector<DynamicValue>,
+                                 std::unordered_map<std::string, DynamicValue>>;
 
     DynamicValue() = default;
 

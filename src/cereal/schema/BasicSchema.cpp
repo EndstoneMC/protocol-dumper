@@ -1,15 +1,24 @@
 #include "BasicSchema.h"
 
-#include "../../symbol.h"
+#include <spdlog/spdlog.h>
 
-const cereal::internal::BasicSchema &cereal::internal::BasicSchema::lookup(
-    const entt::meta_ctx &ctx, entt::type_info info)
+const cereal::internal::BasicSchema &cereal::internal::BasicSchema::lookup(const entt::meta_ctx &ctx,
+                                                                           entt::type_info info)
 {
-    return BEDROCK_CALL(&BasicSchema::lookup, ctx, info);
+    if (auto type = entt::resolve(ctx, info)) {
+        if (auto *schema = static_cast<const BasicSchema *const *>(type.custom())) {
+            if (*schema) {
+                return **schema;
+            }
+        }
+    }
+
+    spdlog::error("BasicSchema::lookup failed for type hash={}", info.hash());
+    std::terminate();
 }
 
-cereal::SchemaDescription cereal::internal::BasicSchema::description(
-    const cereal::internal::ReflectionContext &ctx, cereal::DescriptionConfig config) const
+cereal::SchemaDescription cereal::internal::BasicSchema::description(const cereal::internal::ReflectionContext &ctx,
+                                                                     cereal::DescriptionConfig config) const
 {
-    return BEDROCK_CALL(&BasicSchema::description, this, ctx, config);
+    return makeDescription(ctx, config);
 }

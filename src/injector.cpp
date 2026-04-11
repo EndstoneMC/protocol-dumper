@@ -1,4 +1,5 @@
 #include <Windows.h>
+// must be included after Windows.h
 #include <TlHelp32.h>
 
 #include <filesystem>
@@ -11,7 +12,9 @@
 static DWORD findProcess(const std::wstring &name)
 {
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (snap == INVALID_HANDLE_VALUE) return 0;
+    if (snap == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
 
     PROCESSENTRY32W entry{};
     entry.dwSize = sizeof(entry);
@@ -35,16 +38,13 @@ static bool inject(DWORD pid, const std::filesystem::path &dll_path)
     std::string path_str = dll_path.string();
 
     HANDLE proc = OpenProcess(
-        PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION |
-            PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION,
-        FALSE, pid);
+        PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION, FALSE, pid);
     if (!proc) {
         spdlog::error("Failed to open process (error {})", GetLastError());
         return false;
     }
 
-    void *remote_buf = VirtualAllocEx(proc, nullptr, path_str.size() + 1,
-                                       MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    void *remote_buf = VirtualAllocEx(proc, nullptr, path_str.size() + 1, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!remote_buf) {
         spdlog::error("VirtualAllocEx failed (error {})", GetLastError());
         CloseHandle(proc);
@@ -58,8 +58,8 @@ static bool inject(DWORD pid, const std::filesystem::path &dll_path)
         return false;
     }
 
-    auto loadLibraryAddr = reinterpret_cast<LPTHREAD_START_ROUTINE>(
-        GetProcAddress(GetModuleHandleA("kernel32.dll"), "LoadLibraryA"));
+    auto loadLibraryAddr =
+        reinterpret_cast<LPTHREAD_START_ROUTINE>(GetProcAddress(GetModuleHandleA("kernel32.dll"), "LoadLibraryA"));
 
     HANDLE thread = CreateRemoteThread(proc, nullptr, 0, loadLibraryAddr, remote_buf, 0, nullptr);
     if (!thread) {
