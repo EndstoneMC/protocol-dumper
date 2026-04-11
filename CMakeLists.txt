@@ -7,8 +7,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(FetchContent)
 
 FetchContent_Declare(entt
-    URL      https://github.com/skypjack/entt/archive/refs/tags/v3.16.0.tar.gz
-    URL_HASH SHA256=7d7b4037b737992342049ffab14f22fa10243e01664f8c3a0657aa247ac52f71
+    URL      https://github.com/skypjack/entt/archive/1333fa53129e7cfded5a9640c4336a254049917b.tar.gz
+    URL_HASH SHA256=7905419d002027a2486005fa2483dda3b26532eb1294bc791b2dcd243dcf9c1f
 )
 
 FetchContent_Declare(spdlog
