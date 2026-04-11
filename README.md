@@ -52,7 +52,7 @@ bedrock_server.exe (running)
        |-- Emit per-packet .proto files
        |
        v
-  D:\bds_packet_schemas\
+  ./data/proto/
        |-- common_types.proto
        |-- move_player.proto
        |-- login.proto
@@ -203,7 +203,7 @@ injector.exe -d C:\path\to\proto_dumper.dll
 injector.exe -t 30
 ```
 
-Output goes to `D:\bds_packet_schemas\`.
+Output goes to `data/proto/` relative to the DLL location.
 
 ## Configuration
 

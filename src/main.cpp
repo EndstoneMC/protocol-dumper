@@ -18,7 +18,10 @@ constexpr uintptr_t CREATE_PACKET_RVA = 19037872;
 
 DWORD WINAPI DumpThread(LPVOID param)
 {
-    std::filesystem::path output_dir = "D:\\bds_packet_schemas";
+    // Resolve output dir relative to the DLL location
+    wchar_t dll_path[MAX_PATH];
+    GetModuleFileNameW(static_cast<HMODULE>(param), dll_path, MAX_PATH);
+    std::filesystem::path output_dir = std::filesystem::path(dll_path).parent_path() / "data" / "proto";
     std::filesystem::create_directories(output_dir);
 
     auto logger = spdlog::basic_logger_mt("dumper", (output_dir / "dump_log.txt").string(), true);
