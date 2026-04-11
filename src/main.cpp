@@ -52,9 +52,14 @@ DWORD WINAPI DumpThread(LPVOID param)
         FreeLibraryAndExitThread(static_cast<HMODULE>(param), 1);
     }
 
+    if (!resolveAllSymbols()) {
+        spdlog::error("Failed to resolve all symbols");
+        FreeLibraryAndExitThread(static_cast<HMODULE>(param), 1);
+    }
+
     // --- Hook NetworkSystem::update to capture instance ---
 
-    auto *update_addr = resolveSymbol(
+    auto *update_addr = getSymbol(
         "?update@NetworkSystem@@QEAAXPEBVWeakEntityRef@@@Z");
     if (!update_addr) {
         FreeLibraryAndExitThread(static_cast<HMODULE>(param), 1);

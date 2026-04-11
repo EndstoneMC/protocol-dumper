@@ -3,16 +3,18 @@
 // Mirrors Endstone's BEDROCK_CALL pattern but resolves via runtime sigscan
 // instead of a compile-time symbol table.
 //
-// Usage: define BDS class methods in headers, implement in .cpp with BEDROCK_CALL.
-// __FUNCDNAME__ (MSVC) produces the decorated symbol name that matches config.json.
+// Call resolveAllSymbols() once at startup to sigscan everything upfront.
+// BEDROCK_CALL then just looks up the cached address.
 
 #include <cstddef>
 #include <functional>
 #include <string>
 
-// --- Symbol resolution (implemented in symbol.cpp) ---
+// Resolve all signatures from Config in one pass. Returns false if any fail.
+bool resolveAllSymbols();
 
-void *resolveSymbol(const std::string &decorated_name);
+// Look up a previously resolved symbol. Returns nullptr if not found.
+void *getSymbol(const std::string &decorated_name);
 
 // --- fp_cast: convert between function pointers and void* ---
 
@@ -36,9 +38,9 @@ Return (Class::*fp_cast(Return (Class::*)(Args...) const, void *addr))(Args...) 
     return *reinterpret_cast<Return (Class::**)(Args...) const>(&temp);
 }
 
-// --- BEDROCK_CALL: resolve and invoke a BDS function by decorated name ---
+// --- BEDROCK_CALL: invoke a BDS function by its cached decorated name ---
 
-#define BEDROCK_CALL(fp, ...)                              \
-    std::invoke(                                           \
-        fp_cast(fp, resolveSymbol(__FUNCDNAME__)),         \
+#define BEDROCK_CALL(fp, ...)                          \
+    std::invoke(                                       \
+        fp_cast(fp, getSymbol(__FUNCDNAME__)),          \
         ##__VA_ARGS__)

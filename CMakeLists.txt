@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.21)
+cmake_policy(SET CMP0135 NEW)
 project(proto_dumper LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FetchContent)
@@ -27,8 +28,9 @@ FetchContent_Declare(json
 )
 
 FetchContent_Declare(funchook
-        URL https://github.com/kubo/funchook/archive/refs/tags/v1.1.3.tar.gz
-        URL_HASH SHA256=4b0195e70524237e222dc34c53ac25e12677bb936e64eefe33189931688444c4
+        GIT_REPOSITORY https://github.com/kubo/funchook.git
+        GIT_TAG v1.1.3
+        GIT_SHALLOW 1
 )
 
 FetchContent_Declare(libhat
@@ -48,7 +50,7 @@ add_library(proto_dumper SHARED
         src/common/Packet.cpp
         src/cereal/schema/BasicSchema.cpp
 )
-target_link_libraries(proto_dumper PRIVATE EnTT::EnTT spdlog::spdlog nlohmann_json::nlohmann_json funchook libhat::libhat)
+target_link_libraries(proto_dumper PRIVATE EnTT::EnTT spdlog::spdlog nlohmann_json::nlohmann_json funchook-static libhat::libhat)
 
 add_executable(injector src/injector.cpp)
 target_link_libraries(injector PRIVATE spdlog::spdlog argparse::argparse)
