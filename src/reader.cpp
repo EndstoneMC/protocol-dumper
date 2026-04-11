@@ -2,17 +2,14 @@
 
 #include <fstream>
 
+#include <spdlog/spdlog.h>
+
 // RVAs for cereal functions in BDS — version-specific.
 // Find via Endstone bedrock_symbols.generated.h or IDA/Ghidra.
 // Set to 0 to disable cereal extraction (graceful fallback).
 constexpr uintptr_t REFLECTION_CTX_GLOBAL_RVA = 0;
 constexpr uintptr_t BASIC_SCHEMA_LOOKUP_RVA = 0;
 constexpr uintptr_t BASIC_SCHEMA_DESC_RVA = 0;
-
-void CerealSchemaReader::log(const std::string &msg)
-{
-    if (log_) log_(msg);
-}
 
 std::optional<cereal::SchemaDescription> CerealSchemaReader::extractSchema(
     entt::type_info info)
@@ -27,19 +24,17 @@ std::optional<cereal::SchemaDescription> CerealSchemaReader::extractSchema(
         return basicSchemaDesc_(&schema, ctx_->internal(), config);
     }
     catch (...) {
-        log("[cereal] ERR: exception extracting schema for " + std::string(info.name()));
+        spdlog::error("Exception extracting schema for {}", std::string(info.name()));
         return std::nullopt;
     }
 }
 
-bool CerealSchemaReader::init(uintptr_t base_addr, LogFn log_fn)
+bool CerealSchemaReader::init(uintptr_t base_addr)
 {
-    log_ = std::move(log_fn);
-
     if (REFLECTION_CTX_GLOBAL_RVA == 0 ||
         BASIC_SCHEMA_LOOKUP_RVA == 0 ||
         BASIC_SCHEMA_DESC_RVA == 0) {
-        log("[cereal] RVAs not configured — cereal schema extraction disabled");
+        spdlog::warn("RVAs not configured — cereal schema extraction disabled");
         return false;
     }
 
@@ -50,22 +45,22 @@ bool CerealSchemaReader::init(uintptr_t base_addr, LogFn log_fn)
     basicSchemaDesc_ = reinterpret_cast<BasicSchemaDescFn>(
         base_addr + BASIC_SCHEMA_DESC_RVA);
 
-    log("[cereal] Resolving ReflectionCtx::global()...");
+    spdlog::info("Resolving ReflectionCtx::global()...");
 
     try {
         ctx_ = &reflectionCtxGlobal_();
     }
     catch (...) {
-        log("[cereal] ERR: ReflectionCtx::global() threw");
+        spdlog::error("ReflectionCtx::global() threw");
         return false;
     }
 
     if (!ctx_) {
-        log("[cereal] ERR: ReflectionCtx::global() returned null");
+        spdlog::error("ReflectionCtx::global() returned null");
         return false;
     }
 
-    // Build name → type_info index for O(1) lookups
+    // Build name -> type_info index for O(1) lookups
     auto &meta_ctx = ctx_->internal().mMetaCtx;
     for (auto &&[id, meta_type] : entt::resolve(meta_ctx)) {
         auto info = meta_type.info();
@@ -73,7 +68,7 @@ bool CerealSchemaReader::init(uintptr_t base_addr, LogFn log_fn)
         type_index_.emplace(std::move(name), info);
     }
 
-    log("[cereal] ReflectionCtx has " + std::to_string(type_index_.size()) + " registered types");
+    spdlog::info("ReflectionCtx has {} registered types", type_index_.size());
     return true;
 }
 
@@ -82,11 +77,10 @@ std::optional<cereal::SchemaDescription> CerealSchemaReader::getSchema(
 {
     if (!ctx_) return std::nullopt;
 
-    // Exact match
     auto it = type_index_.find(type_name);
     if (it != type_index_.end()) return extractSchema(it->second);
 
-    // Suffix match (handles namespace-qualified names)
+    // Suffix match for namespace-qualified names
     for (const auto &[name, info] : type_index_) {
         if (name.size() > type_name.size() &&
             name.compare(name.size() - type_name.size(), type_name.size(), type_name) == 0) {

@@ -5,6 +5,9 @@
 #include <string>
 #include <vector>
 
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/basic_file_sink.h>
+
 #include "common/Packet.h"
 #include "reader.h"
 #include "generator.h"
@@ -18,10 +21,12 @@ DWORD WINAPI DumpThread(LPVOID param)
     std::filesystem::path output_dir = "D:\\bds_packet_schemas";
     std::filesystem::create_directories(output_dir);
 
-    std::ofstream log(output_dir / "dump_log.txt", std::ios::trunc);
-    auto logMsg = [&](const std::string &msg) { log << msg << "\n"; log.flush(); };
+    auto logger = spdlog::basic_logger_mt("dumper", (output_dir / "dump_log.txt").string(), true);
+    spdlog::set_default_logger(logger);
+    spdlog::set_pattern("[%H:%M:%S] [%l] %v");
+    spdlog::flush_on(spdlog::level::info);
 
-    logMsg("=== BDS Packet Schema Dump ===");
+    spdlog::info("=== BDS Packet Schema Dump ===");
 
     auto base = reinterpret_cast<uintptr_t>(GetModuleHandle(nullptr));
     auto createPacket = reinterpret_cast<CreatePacketFn>(base + CREATE_PACKET_RVA);
@@ -40,12 +45,12 @@ DWORD WINAPI DumpThread(LPVOID param)
         catch (...) { break; }
     }
 
-    logMsg("Found " + std::to_string(packets.size()) + " packets");
+    spdlog::info("Found {} packets", packets.size());
 
     // Extract schemas via cereal reflection
     CerealSchemaReader reader;
-    if (!reader.init(base, logMsg)) {
-        logMsg("FATAL: cereal init failed");
+    if (!reader.init(base)) {
+        spdlog::error("cereal init failed");
         FreeLibraryAndExitThread(static_cast<HMODULE>(param), 1);
     }
 
@@ -58,26 +63,26 @@ DWORD WINAPI DumpThread(LPVOID param)
 
         if (desc) {
             entries.push_back({pkt.id, pkt.name, std::move(*desc)});
-            logMsg("  OK [" + std::to_string(pkt.id) + "] " + pkt.name);
+            spdlog::info("  OK [{}] {}", pkt.id, pkt.name);
         }
         else {
-            logMsg("  SKIP [" + std::to_string(pkt.id) + "] " + pkt.name);
+            spdlog::warn("  SKIP [{}] {}", pkt.id, pkt.name);
         }
     }
 
-    logMsg(std::to_string(entries.size()) + " / " +
-           std::to_string(packets.size()) + " packets have cereal schemas");
+    spdlog::info("{} / {} packets have cereal schemas", entries.size(), packets.size());
 
-    logMsg("Generating .proto files...");
+    spdlog::info("Generating .proto files...");
     ProtoGenerator gen;
     gen.generate(entries, output_dir);
-    logMsg("Done! Proto files written to: " + output_dir.string());
+    spdlog::info("Done! Proto files written to: {}", output_dir.string());
 
     {
         std::ofstream done(output_dir / "DONE.txt");
         done << entries.size() << " / " << packets.size() << " packets dumped\n";
     }
 
+    spdlog::shutdown();
     FreeLibraryAndExitThread(static_cast<HMODULE>(param), 0);
 }
 

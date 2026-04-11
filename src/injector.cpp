@@ -2,11 +2,13 @@
 #include <TlHelp32.h>
 
 #include <filesystem>
-#include <iostream>
 #include <string>
 #include <thread>
 
-static DWORD findProcess(const wchar_t *name)
+#include <argparse/argparse.hpp>
+#include <spdlog/spdlog.h>
+
+static DWORD findProcess(const std::wstring &name)
 {
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snap == INVALID_HANDLE_VALUE) return 0;
@@ -17,7 +19,7 @@ static DWORD findProcess(const wchar_t *name)
     DWORD pid = 0;
     if (Process32FirstW(snap, &entry)) {
         do {
-            if (_wcsicmp(entry.szExeFile, name) == 0) {
+            if (_wcsicmp(entry.szExeFile, name.c_str()) == 0) {
                 pid = entry.th32ProcessID;
                 break;
             }
@@ -37,20 +39,20 @@ static bool inject(DWORD pid, const std::filesystem::path &dll_path)
             PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION,
         FALSE, pid);
     if (!proc) {
-        std::cerr << "Failed to open process (error " << GetLastError() << ")\n";
+        spdlog::error("Failed to open process (error {})", GetLastError());
         return false;
     }
 
     void *remote_buf = VirtualAllocEx(proc, nullptr, path_str.size() + 1,
                                        MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!remote_buf) {
-        std::cerr << "VirtualAllocEx failed (error " << GetLastError() << ")\n";
+        spdlog::error("VirtualAllocEx failed (error {})", GetLastError());
         CloseHandle(proc);
         return false;
     }
 
     if (!WriteProcessMemory(proc, remote_buf, path_str.c_str(), path_str.size() + 1, nullptr)) {
-        std::cerr << "WriteProcessMemory failed (error " << GetLastError() << ")\n";
+        spdlog::error("WriteProcessMemory failed (error {})", GetLastError());
         VirtualFreeEx(proc, remote_buf, 0, MEM_RELEASE);
         CloseHandle(proc);
         return false;
@@ -61,7 +63,7 @@ static bool inject(DWORD pid, const std::filesystem::path &dll_path)
 
     HANDLE thread = CreateRemoteThread(proc, nullptr, 0, loadLibraryAddr, remote_buf, 0, nullptr);
     if (!thread) {
-        std::cerr << "CreateRemoteThread failed (error " << GetLastError() << ")\n";
+        spdlog::error("CreateRemoteThread failed (error {})", GetLastError());
         VirtualFreeEx(proc, remote_buf, 0, MEM_RELEASE);
         CloseHandle(proc);
         return false;
@@ -75,33 +77,76 @@ static bool inject(DWORD pid, const std::filesystem::path &dll_path)
     return true;
 }
 
-int main()
+int main(int argc, char *argv[])
 {
-    // Resolve DLL path relative to this exe
-    wchar_t exe_path[MAX_PATH];
-    GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
-    std::filesystem::path dll_path = std::filesystem::path(exe_path).parent_path() / "proto_dumper.dll";
+    argparse::ArgumentParser program("injector", "1.0");
+    program.add_description("Inject proto_dumper.dll into a running BDS process");
 
-    if (!std::filesystem::exists(dll_path)) {
-        std::cerr << "DLL not found: " << dll_path.string() << "\n";
+    program.add_argument("-p", "--process")
+        .default_value(std::string("bedrock_server.exe"))
+        .help("target process name");
+
+    program.add_argument("-d", "--dll")
+        .default_value(std::string(""))
+        .help("path to DLL (default: proto_dumper.dll next to this exe)");
+
+    program.add_argument("-t", "--timeout")
+        .default_value(0)
+        .scan<'i', int>()
+        .help("seconds to wait for process (0 = wait forever)");
+
+    try {
+        program.parse_args(argc, argv);
+    }
+    catch (const std::exception &e) {
+        spdlog::error("{}", e.what());
+        std::cerr << program;
         return 1;
     }
 
-    std::cout << "Waiting for bedrock_server.exe...\n";
+    auto process_name = program.get<std::string>("--process");
+    std::wstring wprocess_name(process_name.begin(), process_name.end());
+
+    std::filesystem::path dll_path;
+    auto dll_arg = program.get<std::string>("--dll");
+    if (dll_arg.empty()) {
+        wchar_t exe_path[MAX_PATH];
+        GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
+        dll_path = std::filesystem::path(exe_path).parent_path() / "proto_dumper.dll";
+    }
+    else {
+        dll_path = std::filesystem::absolute(dll_arg);
+    }
+
+    if (!std::filesystem::exists(dll_path)) {
+        spdlog::error("DLL not found: {}", dll_path.string());
+        return 1;
+    }
+
+    int timeout = program.get<int>("--timeout");
+    spdlog::info("Waiting for {}...", process_name);
 
     DWORD pid = 0;
-    while (!(pid = findProcess(L"bedrock_server.exe"))) {
+    auto start = std::chrono::steady_clock::now();
+    while (!(pid = findProcess(wprocess_name))) {
+        if (timeout > 0) {
+            auto elapsed = std::chrono::steady_clock::now() - start;
+            if (elapsed >= std::chrono::seconds(timeout)) {
+                spdlog::error("Timed out waiting for {}", process_name);
+                return 1;
+            }
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 
-    std::cout << "Found bedrock_server.exe (PID " << pid << ")\n";
-    std::cout << "Injecting " << dll_path.filename().string() << "...\n";
+    spdlog::info("Found {} (PID {})", process_name, pid);
+    spdlog::info("Injecting {}...", dll_path.filename().string());
 
     if (!inject(pid, dll_path)) {
-        std::cerr << "Injection failed\n";
+        spdlog::error("Injection failed");
         return 1;
     }
 
-    std::cout << "Injected. The DLL will dump schemas and unload itself.\n";
+    spdlog::info("Injected. The DLL will dump schemas and unload itself.");
     return 0;
 }
