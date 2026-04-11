@@ -29,20 +29,22 @@ bedrock_server.exe (running)
        |
        |  DLL injection via injector.exe
        v
-   DllMain -> DumpThread
+   DllMain -> CreateThread(DumpThread)
        |
+       |-- libhat: sigscan for NetworkSystem::update
+       |-- funchook: hook NetworkSystem::update
+       |-- wait for first call -> capture NetworkSystem* this
+       |-- unhook
+       |
+       |-- NetworkSystem::mReflectionCtx -> cereal::ReflectionCtx*
+       |
+       |-- libhat: sigscan for createPacket
        |-- createPacket(0, 1, 2, ...) -> enumerate packet IDs and names
        |         stop when factory returns nullptr, skip 200-299
        |
-       |-- ReflectionCtx::global()       (via RVA)
-       |         |
-       |    entt::resolve(meta_ctx)      (iterate all registered types)
-       |         |
-       |    BasicSchema::lookup()        (via RVA)
-       |    BasicSchema::description()   (via RVA)
-       |         |
-       |         v
-       |   SchemaDescription per packet payload
+       |-- libhat: sigscan for BasicSchema::lookup, BasicSchema::description
+       |-- entt::resolve(meta_ctx) -> iterate registered types
+       |-- extract SchemaDescription per packet payload
        |
        v
   ProtoGenerator
@@ -203,30 +205,34 @@ injector.exe -d C:\path\to\proto_dumper.dll
 injector.exe -t 30
 ```
 
-Output goes to `data/proto/` relative to the DLL location.
+Output goes to `data/proto/` relative to the host executable.
 
 ## Configuration
 
-### RVAs
+### Signatures
 
-Three RVAs in `src/reader.cpp` and one in `src/main.cpp` must be updated for each BDS version:
+All BDS function addresses are resolved at runtime via byte pattern scanning (libhat). Patterns are defined in `src/signatures.h`:
 
 ```cpp
-// reader.cpp
-constexpr uintptr_t REFLECTION_CTX_GLOBAL_RVA = 0;  // cereal::ReflectionCtx::global()
-constexpr uintptr_t BASIC_SCHEMA_LOOKUP_RVA = 0;    // cereal::internal::BasicSchema::lookup()
-constexpr uintptr_t BASIC_SCHEMA_DESC_RVA = 0;      // cereal::internal::BasicSchema::description()
-
-// main.cpp
-constexpr uintptr_t CREATE_PACKET_RVA = 19037872;   // MinecraftPackets::createPacket()
+namespace sig {
+    constexpr auto NETWORK_SYSTEM_UPDATE = "?? ?? ?? ?? ??"_sig;  // TODO
+    constexpr auto CREATE_PACKET         = "?? ?? ?? ?? ??"_sig;  // TODO
+    constexpr auto BASIC_SCHEMA_LOOKUP   = "?? ?? ?? ?? ??"_sig;  // TODO
+    constexpr auto BASIC_SCHEMA_DESC     = "?? ?? ?? ?? ??"_sig;  // TODO
+}
 ```
 
-Find these via Endstone's `bedrock_symbols.generated.h`, `dumpbin /exports`, IDA, or Ghidra. MSVC mangled symbols to search for:
+To find a signature in IDA:
+1. Navigate to the target function
+2. Select the first ~15-20 bytes of the prologue
+3. Copy as hex, replace variable bytes with `?`
+4. Verify uniqueness (should match exactly once in the module)
 
-- `?global@ReflectionCtx@cereal@@SAAEAV12@XZ`
-- `?lookup@BasicSchema@internal@cereal@@...`
-- `?description@BasicSchema@internal@cereal@@...`
-- `?createPacket@MinecraftPackets@@...`
+Functions to find:
+- `NetworkSystem::update` -- hooked to capture the NetworkSystem instance
+- `MinecraftPackets::createPacket` -- called to enumerate packet IDs
+- `cereal::internal::BasicSchema::lookup` -- resolves type to schema object
+- `cereal::internal::BasicSchema::description` -- extracts SchemaDescription tree
 
 ## Dependencies
 
@@ -235,6 +241,8 @@ Find these via Endstone's `bedrock_symbols.generated.h`, `dumpbin /exports`, IDA
 | [EnTT](https://github.com/skypjack/entt) | latest | Meta reflection (must match BDS's entt version for ABI compatibility) |
 | [spdlog](https://github.com/gabime/spdlog) | v1.17.0 | Logging |
 | [argparse](https://github.com/p-ranav/argparse) | v3.2 | CLI argument parsing for injector |
+| [funchook](https://github.com/kubo/funchook) | v1.1.3 | Function hooking to capture NetworkSystem instance |
+| [libhat](https://github.com/BasedInc/libhat) | latest | SIMD signature scanning for BDS functions |
 
 All fetched automatically via CMake FetchContent.
 
@@ -242,10 +250,11 @@ All fetched automatically via CMake FetchContent.
 
 ```
 src/
-    main.cpp                          DLL entry point, packet enumeration, orchestration
+    main.cpp                          DLL entry point, hook + sigscan orchestration
     generator.h/.cpp                  SchemaDescription -> .proto file generation
-    reader.h/.cpp                     Runtime schema extraction from BDS via RVAs
+    reader.h/.cpp                     Cereal schema extraction from ReflectionCtx
     injector.cpp                      EXE that finds BDS process and injects the DLL
+    signatures.h                      Byte patterns for all BDS functions
     common/
         Bedrock.h                     Bedrock::EnableNonOwnerReferences stub
         Packet.h                      Minimal ABI-compatible Packet base class

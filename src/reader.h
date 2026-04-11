@@ -12,7 +12,9 @@
 
 class CerealSchemaReader {
 public:
-    bool init(uintptr_t base_addr);
+    // Initialize with a live ReflectionCtx from the BDS process.
+    // Sigscans for BasicSchema::lookup and ::description internally.
+    bool init(cereal::ReflectionCtx *ctx);
 
     std::optional<cereal::SchemaDescription> getSchema(const std::string &type_name);
 
@@ -22,7 +24,6 @@ public:
     void dumpRegisteredTypes(const std::filesystem::path &output_dir);
 
 private:
-    using ReflectionCtxGlobalFn = cereal::ReflectionCtx &(*)();
     using BasicSchemaLookupFn = const cereal::internal::BasicSchema &(*)(
         const entt::meta_ctx &, entt::type_info);
     using BasicSchemaDescFn = cereal::SchemaDescription (*)(
@@ -30,7 +31,6 @@ private:
         const cereal::internal::ReflectionContext &ctx,
         cereal::DescriptionConfig config);
 
-    ReflectionCtxGlobalFn reflectionCtxGlobal_ = nullptr;
     BasicSchemaLookupFn basicSchemaLookup_ = nullptr;
     BasicSchemaDescFn basicSchemaDesc_ = nullptr;
 

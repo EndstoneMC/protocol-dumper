@@ -1,15 +1,22 @@
 #include "reader.h"
+#include "signatures.h"
 
 #include <fstream>
 
+#include <libhat.hpp>
 #include <spdlog/spdlog.h>
 
-// RVAs for cereal functions in BDS — version-specific.
-// Find via Endstone bedrock_symbols.generated.h or IDA/Ghidra.
-// Set to 0 to disable cereal extraction (graceful fallback).
-constexpr uintptr_t REFLECTION_CTX_GLOBAL_RVA = 0;
-constexpr uintptr_t BASIC_SCHEMA_LOOKUP_RVA = 0;
-constexpr uintptr_t BASIC_SCHEMA_DESC_RVA = 0;
+template <hat::fixed_signature Sig>
+static void *findSig(const char *name)
+{
+    auto mod = hat::process::get_process_module();
+    auto result = hat::find_pattern<Sig>(mod.get());
+    if (!result.has_result()) {
+        spdlog::error("Signature not found: {}", name);
+        return nullptr;
+    }
+    return const_cast<void *>(static_cast<const void *>(result.get()));
+}
 
 std::optional<cereal::SchemaDescription> CerealSchemaReader::extractSchema(
     entt::type_info info)
@@ -29,36 +36,25 @@ std::optional<cereal::SchemaDescription> CerealSchemaReader::extractSchema(
     }
 }
 
-bool CerealSchemaReader::init(uintptr_t base_addr)
+bool CerealSchemaReader::init(cereal::ReflectionCtx *ctx)
 {
-    if (REFLECTION_CTX_GLOBAL_RVA == 0 ||
-        BASIC_SCHEMA_LOOKUP_RVA == 0 ||
-        BASIC_SCHEMA_DESC_RVA == 0) {
-        spdlog::warn("RVAs not configured — cereal schema extraction disabled");
-        return false;
-    }
-
-    reflectionCtxGlobal_ = reinterpret_cast<ReflectionCtxGlobalFn>(
-        base_addr + REFLECTION_CTX_GLOBAL_RVA);
-    basicSchemaLookup_ = reinterpret_cast<BasicSchemaLookupFn>(
-        base_addr + BASIC_SCHEMA_LOOKUP_RVA);
-    basicSchemaDesc_ = reinterpret_cast<BasicSchemaDescFn>(
-        base_addr + BASIC_SCHEMA_DESC_RVA);
-
-    spdlog::info("Resolving ReflectionCtx::global()...");
-
-    try {
-        ctx_ = &reflectionCtxGlobal_();
-    }
-    catch (...) {
-        spdlog::error("ReflectionCtx::global() threw");
-        return false;
-    }
-
+    ctx_ = ctx;
     if (!ctx_) {
-        spdlog::error("ReflectionCtx::global() returned null");
+        spdlog::error("ReflectionCtx is null");
         return false;
     }
+
+    // Sigscan for BasicSchema functions
+    auto *lookup_addr = findSig<sig::BASIC_SCHEMA_LOOKUP>("BasicSchema::lookup");
+    auto *desc_addr = findSig<sig::BASIC_SCHEMA_DESC>("BasicSchema::description");
+
+    if (!lookup_addr || !desc_addr) {
+        spdlog::error("Failed to resolve BasicSchema functions");
+        return false;
+    }
+
+    basicSchemaLookup_ = reinterpret_cast<BasicSchemaLookupFn>(lookup_addr);
+    basicSchemaDesc_ = reinterpret_cast<BasicSchemaDescFn>(desc_addr);
 
     // Build name -> type_info index for O(1) lookups
     auto &meta_ctx = ctx_->internal().mMetaCtx;

@@ -8,7 +8,7 @@ class BasicSchema {
 public:
     virtual ~BasicSchema() = default;
 
-    // Called via resolved RVAs — not linked directly:
+    // Called via sigscan — not linked directly:
     // static const BasicSchema& lookup(const entt::meta_ctx& ctx, entt::type_info info);
     // SchemaDescription description(const ReflectionContext& ctx, DescriptionConfig config) const;
 

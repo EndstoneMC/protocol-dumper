@@ -46,5 +46,5 @@ private:
 };
 static_assert(sizeof(Packet) == 48);
 
-// Factory function — resolved at runtime via RVA
+// Factory function — resolved at runtime via sigscan
 using CreatePacketFn = std::shared_ptr<Packet> (*)(int);

@@ -21,14 +21,26 @@ FetchContent_Declare(argparse
         URL_HASH SHA256=9dcb3d8ce0a41b2a48ac8baa54b51a9f1b6a2c52dd374e28cc713bab0568ec98
 )
 
-FetchContent_MakeAvailable(entt spdlog argparse)
+FetchContent_Declare(funchook
+        GIT_REPOSITORY https://github.com/kubo/funchook.git
+        GIT_TAG v1.1.3
+        GIT_SHALLOW TRUE
+)
+
+FetchContent_Declare(libhat
+        GIT_REPOSITORY https://github.com/BasedInc/libhat.git
+        GIT_TAG main
+        GIT_SHALLOW TRUE
+)
+
+FetchContent_MakeAvailable(entt spdlog argparse funchook libhat)
 
 add_library(proto_dumper SHARED
         src/main.cpp
         src/generator.cpp
         src/reader.cpp
 )
-target_link_libraries(proto_dumper PRIVATE EnTT::EnTT spdlog::spdlog)
+target_link_libraries(proto_dumper PRIVATE EnTT::EnTT spdlog::spdlog funchook libhat::libhat)
 
 add_executable(injector src/injector.cpp)
 target_link_libraries(injector PRIVATE spdlog::spdlog argparse::argparse)
