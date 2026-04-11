@@ -1,11 +1,43 @@
 {
-  "signatures": {
-    "NetworkSystem::update": "",
-    "MinecraftPackets::createPacket": "",
-    "BasicSchema::lookup": "",
-    "BasicSchema::description": ""
-  },
-  "offsets": {
-    "NetworkSystem::mReflectionCtx": 0
-  }
+  "executable": "bedrock_server.exe",
+  "signatures": [
+    {
+      "name": "NetworkSystem::update",
+      "module": "bedrock_server.exe",
+      "pattern": "",
+      "offsets": [],
+      "extra": 0,
+      "relative": false
+    },
+    {
+      "name": "MinecraftPackets::createPacket",
+      "module": "bedrock_server.exe",
+      "pattern": "",
+      "offsets": [],
+      "extra": 0,
+      "relative": false
+    },
+    {
+      "name": "BasicSchema::lookup",
+      "module": "bedrock_server.exe",
+      "pattern": "",
+      "offsets": [],
+      "extra": 0,
+      "relative": false
+    },
+    {
+      "name": "BasicSchema::description",
+      "module": "bedrock_server.exe",
+      "pattern": "",
+      "offsets": [],
+      "extra": 0,
+      "relative": false
+    }
+  ],
+  "offsets": [
+    {
+      "name": "NetworkSystem::mReflectionCtx",
+      "value": 0
+    }
+  ]
 }

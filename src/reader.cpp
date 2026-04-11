@@ -2,31 +2,7 @@
 
 #include <fstream>
 
-#include <libhat.hpp>
 #include <spdlog/spdlog.h>
-
-static void *findSig(const Config &config, const std::string &name)
-{
-    const auto &pattern = config.sig(name);
-    if (pattern.empty()) return nullptr;
-
-    auto sig = hat::parse_signature(pattern);
-    if (!sig) {
-        spdlog::error("Invalid signature pattern for {}: {}", name, pattern);
-        return nullptr;
-    }
-
-    auto mod = hat::process::get_process_module();
-    auto result = hat::find_pattern(mod.get(), *sig);
-    if (!result.has_result()) {
-        spdlog::error("Signature not found in module: {}", name);
-        return nullptr;
-    }
-
-    auto *addr = const_cast<void *>(static_cast<const void *>(result.get()));
-    spdlog::info("Resolved {} @ {}", name, addr);
-    return addr;
-}
 
 std::optional<cereal::SchemaDescription> CerealSchemaReader::extractSchema(
     entt::type_info info)
@@ -54,8 +30,8 @@ bool CerealSchemaReader::init(cereal::ReflectionCtx *ctx, const Config &config)
         return false;
     }
 
-    auto *lookup_addr = findSig(config, "BasicSchema::lookup");
-    auto *desc_addr = findSig(config, "BasicSchema::description");
+    auto *lookup_addr = config.resolve("BasicSchema::lookup");
+    auto *desc_addr = config.resolve("BasicSchema::description");
 
     if (!lookup_addr || !desc_addr) {
         spdlog::error("Failed to resolve BasicSchema functions");
