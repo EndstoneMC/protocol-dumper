@@ -21,6 +21,11 @@ FetchContent_Declare(argparse
         URL_HASH SHA256=9dcb3d8ce0a41b2a48ac8baa54b51a9f1b6a2c52dd374e28cc713bab0568ec98
 )
 
+FetchContent_Declare(json
+        URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+        URL_HASH SHA256=d6c65aca6b1ed68e7a182f4757f0f1b0b77571b1c626571dbbfaf2df79171d05
+)
+
 FetchContent_Declare(funchook
         GIT_REPOSITORY https://github.com/kubo/funchook.git
         GIT_TAG v1.1.3
@@ -33,14 +38,15 @@ FetchContent_Declare(libhat
         GIT_SHALLOW TRUE
 )
 
-FetchContent_MakeAvailable(entt spdlog argparse funchook libhat)
+FetchContent_MakeAvailable(entt spdlog argparse json funchook libhat)
 
 add_library(proto_dumper SHARED
         src/main.cpp
+        src/config.cpp
         src/generator.cpp
         src/reader.cpp
 )
-target_link_libraries(proto_dumper PRIVATE EnTT::EnTT spdlog::spdlog funchook libhat::libhat)
+target_link_libraries(proto_dumper PRIVATE EnTT::EnTT spdlog::spdlog nlohmann_json::nlohmann_json funchook libhat::libhat)
 
 add_executable(injector src/injector.cpp)
 target_link_libraries(injector PRIVATE spdlog::spdlog argparse::argparse)

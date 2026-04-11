@@ -3,6 +3,7 @@
 #include "cereal/Context.h"
 #include "cereal/schema/BasicSchema.h"
 #include "cereal/schema/SchemaDescription.h"
+#include "config.h"
 
 #include <filesystem>
 #include <map>
@@ -12,9 +13,7 @@
 
 class CerealSchemaReader {
 public:
-    // Initialize with a live ReflectionCtx from the BDS process.
-    // Sigscans for BasicSchema::lookup and ::description internally.
-    bool init(cereal::ReflectionCtx *ctx);
+    bool init(cereal::ReflectionCtx *ctx, const Config &config);
 
     std::optional<cereal::SchemaDescription> getSchema(const std::string &type_name);
 

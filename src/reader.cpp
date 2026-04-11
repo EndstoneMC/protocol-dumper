@@ -1,21 +1,31 @@
 #include "reader.h"
-#include "signatures.h"
 
 #include <fstream>
 
 #include <libhat.hpp>
 #include <spdlog/spdlog.h>
 
-template <hat::fixed_signature Sig>
-static void *findSig(const char *name)
+static void *findSig(const Config &config, const std::string &name)
 {
-    auto mod = hat::process::get_process_module();
-    auto result = hat::find_pattern<Sig>(mod.get());
-    if (!result.has_result()) {
-        spdlog::error("Signature not found: {}", name);
+    const auto &pattern = config.sig(name);
+    if (pattern.empty()) return nullptr;
+
+    auto sig = hat::parse_signature(pattern);
+    if (!sig) {
+        spdlog::error("Invalid signature pattern for {}: {}", name, pattern);
         return nullptr;
     }
-    return const_cast<void *>(static_cast<const void *>(result.get()));
+
+    auto mod = hat::process::get_process_module();
+    auto result = hat::find_pattern(mod.get(), *sig);
+    if (!result.has_result()) {
+        spdlog::error("Signature not found in module: {}", name);
+        return nullptr;
+    }
+
+    auto *addr = const_cast<void *>(static_cast<const void *>(result.get()));
+    spdlog::info("Resolved {} @ {}", name, addr);
+    return addr;
 }
 
 std::optional<cereal::SchemaDescription> CerealSchemaReader::extractSchema(
@@ -36,7 +46,7 @@ std::optional<cereal::SchemaDescription> CerealSchemaReader::extractSchema(
     }
 }
 
-bool CerealSchemaReader::init(cereal::ReflectionCtx *ctx)
+bool CerealSchemaReader::init(cereal::ReflectionCtx *ctx, const Config &config)
 {
     ctx_ = ctx;
     if (!ctx_) {
@@ -44,9 +54,8 @@ bool CerealSchemaReader::init(cereal::ReflectionCtx *ctx)
         return false;
     }
 
-    // Sigscan for BasicSchema functions
-    auto *lookup_addr = findSig<sig::BASIC_SCHEMA_LOOKUP>("BasicSchema::lookup");
-    auto *desc_addr = findSig<sig::BASIC_SCHEMA_DESC>("BasicSchema::description");
+    auto *lookup_addr = findSig(config, "BasicSchema::lookup");
+    auto *desc_addr = findSig(config, "BasicSchema::description");
 
     if (!lookup_addr || !desc_addr) {
         spdlog::error("Failed to resolve BasicSchema functions");
@@ -56,7 +65,7 @@ bool CerealSchemaReader::init(cereal::ReflectionCtx *ctx)
     basicSchemaLookup_ = reinterpret_cast<BasicSchemaLookupFn>(lookup_addr);
     basicSchemaDesc_ = reinterpret_cast<BasicSchemaDescFn>(desc_addr);
 
-    // Build name -> type_info index for O(1) lookups
+    // Build name -> type_info index
     auto &meta_ctx = ctx_->internal().mMetaCtx;
     for (auto &&[id, meta_type] : entt::resolve(meta_ctx)) {
         auto info = meta_type.info();
@@ -76,7 +85,6 @@ std::optional<cereal::SchemaDescription> CerealSchemaReader::getSchema(
     auto it = type_index_.find(type_name);
     if (it != type_index_.end()) return extractSchema(it->second);
 
-    // Suffix match for namespace-qualified names
     for (const auto &[name, info] : type_index_) {
         if (name.size() > type_name.size() &&
             name.compare(name.size() - type_name.size(), type_name.size(), type_name) == 0) {

@@ -1,0 +1,11 @@
+{
+  "signatures": {
+    "NetworkSystem::update": "",
+    "MinecraftPackets::createPacket": "",
+    "BasicSchema::lookup": "",
+    "BasicSchema::description": ""
+  },
+  "offsets": {
+    "NetworkSystem::mReflectionCtx": 0
+  }
+}

@@ -11,9 +11,36 @@
 #include <spdlog/sinks/basic_file_sink.h>
 
 #include "common/Packet.h"
+#include "config.h"
 #include "reader.h"
 #include "generator.h"
-#include "signatures.h"
+
+static Config g_config;
+
+// --- Sigscan helper using runtime-parsed patterns from config ---
+
+static void *findSig(const std::string &name)
+{
+    const auto &pattern = g_config.sig(name);
+    if (pattern.empty()) return nullptr;
+
+    auto sig = hat::parse_signature(pattern);
+    if (!sig) {
+        spdlog::error("Invalid signature pattern for {}: {}", name, pattern);
+        return nullptr;
+    }
+
+    auto mod = hat::process::get_process_module();
+    auto result = hat::find_pattern(mod.get(), *sig);
+    if (!result.has_result()) {
+        spdlog::error("Signature not found in module: {}", name);
+        return nullptr;
+    }
+
+    auto *addr = const_cast<void *>(static_cast<const void *>(result.get()));
+    spdlog::info("Resolved {} @ {}", name, addr);
+    return addr;
+}
 
 // --- NetworkSystem::update hook to capture this pointer ---
 
@@ -31,26 +58,12 @@ static void hooked_update(void *self, const void *userList)
     orig_update(self, userList);
 }
 
-// --- Signature scanning helper ---
-
-template <hat::fixed_signature Sig>
-static void *findSig(const char *name)
-{
-    auto mod = hat::process::get_process_module();
-    auto result = hat::find_pattern<Sig>(mod.get());
-    if (!result.has_result()) {
-        spdlog::error("Signature not found: {}", name);
-        return nullptr;
-    }
-    return const_cast<void *>(static_cast<const void *>(result.get()));
-}
-
 DWORD WINAPI DumpThread(LPVOID param)
 {
-    // Resolve output dir relative to the host executable
     wchar_t exe_path[MAX_PATH];
     GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
-    std::filesystem::path output_dir = std::filesystem::path(exe_path).parent_path() / "data" / "proto";
+    auto exe_dir = std::filesystem::path(exe_path).parent_path();
+    auto output_dir = exe_dir / "data" / "proto";
     std::filesystem::create_directories(output_dir);
 
     auto logger = spdlog::basic_logger_mt("dumper", (output_dir / "dump_log.txt").string(), true);
@@ -60,11 +73,18 @@ DWORD WINAPI DumpThread(LPVOID param)
 
     spdlog::info("=== BDS Packet Schema Dump ===");
 
+    // --- Load config ---
+
+    auto config_path = exe_dir / "config.json";
+    if (!g_config.load(config_path)) {
+        spdlog::error("Cannot proceed without config");
+        FreeLibraryAndExitThread(static_cast<HMODULE>(param), 1);
+    }
+
     // --- Hook NetworkSystem::update to capture the instance ---
 
-    auto *update_addr = findSig<sig::NETWORK_SYSTEM_UPDATE>("NetworkSystem::update");
+    auto *update_addr = findSig("NetworkSystem::update");
     if (!update_addr) {
-        spdlog::error("Cannot proceed without NetworkSystem::update");
         FreeLibraryAndExitThread(static_cast<HMODULE>(param), 1);
     }
 
@@ -72,7 +92,8 @@ DWORD WINAPI DumpThread(LPVOID param)
     orig_update = reinterpret_cast<NetworkSystemUpdateFn>(update_addr);
 
     funchook_t *hook = funchook_create();
-    int rv = funchook_prepare(hook, reinterpret_cast<void **>(&orig_update), reinterpret_cast<void *>(hooked_update));
+    int rv = funchook_prepare(hook, reinterpret_cast<void **>(&orig_update),
+                              reinterpret_cast<void *>(hooked_update));
     if (rv != 0) {
         spdlog::error("funchook_prepare failed: {}", funchook_error_message(hook));
         FreeLibraryAndExitThread(static_cast<HMODULE>(param), 1);
@@ -92,23 +113,24 @@ DWORD WINAPI DumpThread(LPVOID param)
 
     spdlog::info("Captured NetworkSystem @ {}", captured_network_system);
 
-    // --- Read ReflectionCtx from NetworkSystem ---
-    // mReflectionCtx is a gsl::not_null<unique_ptr<cereal::ReflectionCtx>>
-    // at a known offset in NetworkSystem. The offset must be determined from
-    // the BDS binary (count member sizes or find via IDA).
-    // For now, use getPacketReflectionCtx() via sigscan if available,
-    // or hardcode the offset once known.
+    // --- Read ReflectionCtx from NetworkSystem at configured offset ---
 
-    // TODO: resolve mReflectionCtx offset or sigscan getPacketReflectionCtx
-    // For now, placeholder:
-    // auto *ctx = *reinterpret_cast<cereal::ReflectionCtx**>(
-    //     static_cast<char*>(captured_network_system) + REFLECTION_CTX_OFFSET);
+    auto ctx_offset = g_config.offset("NetworkSystem::mReflectionCtx");
+    if (ctx_offset == 0) {
+        spdlog::error("NetworkSystem::mReflectionCtx offset not configured");
+        FreeLibraryAndExitThread(static_cast<HMODULE>(param), 1);
+    }
+
+    // mReflectionCtx is gsl::not_null<unique_ptr<ReflectionCtx>> — unique_ptr stores a raw pointer
+    auto *ctx = *reinterpret_cast<cereal::ReflectionCtx **>(
+        static_cast<char *>(captured_network_system) + ctx_offset);
+
+    spdlog::info("ReflectionCtx @ {}", static_cast<void *>(ctx));
 
     // --- Enumerate packets ---
 
-    auto *create_addr = findSig<sig::CREATE_PACKET>("MinecraftPackets::createPacket");
+    auto *create_addr = findSig("MinecraftPackets::createPacket");
     if (!create_addr) {
-        spdlog::error("Cannot proceed without createPacket");
         FreeLibraryAndExitThread(static_cast<HMODULE>(param), 1);
     }
 
@@ -132,22 +154,37 @@ DWORD WINAPI DumpThread(LPVOID param)
     // --- Extract schemas via cereal reflection ---
 
     CerealSchemaReader reader;
-    // TODO: pass actual ReflectionCtx* once offset is resolved
-    // if (!reader.init(ctx)) { ... }
+    if (!reader.init(ctx, g_config)) {
+        spdlog::error("CerealSchemaReader init failed");
+        FreeLibraryAndExitThread(static_cast<HMODULE>(param), 1);
+    }
+
+    reader.dumpRegisteredTypes(output_dir);
+
+    std::vector<ProtoGenerator::PacketEntry> entries;
+    for (const auto &pkt : packets) {
+        auto desc = reader.getSchema(pkt.name + "PacketPayload");
+        if (!desc) desc = reader.getSchema(pkt.name + "Payload");
+
+        if (desc) {
+            entries.push_back({pkt.id, pkt.name, std::move(*desc)});
+            spdlog::info("  OK [{}] {}", pkt.id, pkt.name);
+        }
+        else {
+            spdlog::warn("  SKIP [{}] {}", pkt.id, pkt.name);
+        }
+    }
+
+    spdlog::info("{} / {} packets have cereal schemas", entries.size(), packets.size());
 
     spdlog::info("Generating .proto files...");
-    // TODO: uncomment once reader.init works
-    // reader.dumpRegisteredTypes(output_dir);
-    // std::vector<ProtoGenerator::PacketEntry> entries;
-    // for (const auto &pkt : packets) { ... }
-    // ProtoGenerator gen;
-    // gen.generate(entries, output_dir);
-
+    ProtoGenerator gen;
+    gen.generate(entries, output_dir);
     spdlog::info("Done! Proto files written to: {}", output_dir.string());
 
     {
         std::ofstream done(output_dir / "DONE.txt");
-        done << packets.size() << " packets enumerated\n";
+        done << entries.size() << " / " << packets.size() << " packets dumped\n";
     }
 
     spdlog::shutdown();
