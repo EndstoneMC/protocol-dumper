@@ -4,7 +4,7 @@
 
 #include "../symbol.h"
 
-std::shared_ptr<Packet> MinecraftPackets::createPacket(int id)
+std::shared_ptr<Packet> MinecraftPackets::createPacket(MinecraftPacketIds id)
 {
     static auto addr = []() -> std::byte * {
         auto signature = hat::compile_signature<"E8 ? ? ? ? 90 48 83 BD ? ? ? ? ? 0F 84 ? ? ? ? FF 15">();

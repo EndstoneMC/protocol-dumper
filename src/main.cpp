@@ -33,49 +33,11 @@ DWORD WINAPI DumpThread(LPVOID param)
 
     spdlog::info("=== BDS Packet Schema Dump ===");
 
-    // --- Hook NetworkSystem::update to capture instance ---
-    //
-    // auto *update_addr = getSymbol(
-    //     "NetworkSystem::update");
-    // if (!update_addr) {
-    //     FreeLibraryAndExitThread(static_cast<HMODULE>(param), 1);
-    // }
-    //
-    // capture_event = CreateEventA(nullptr, TRUE, FALSE, nullptr);
-    // orig_update = reinterpret_cast<decltype(orig_update)>(update_addr);
-    //
-    // funchook_t *hook = funchook_create();
-    // if (funchook_prepare(hook, reinterpret_cast<void **>(&orig_update),
-    //                      reinterpret_cast<void *>(hooked_update)) != 0 ||
-    //     funchook_install(hook, 0) != 0) {
-    //     spdlog::error("Hook failed: {}", funchook_error_message(hook));
-    //     FreeLibraryAndExitThread(static_cast<HMODULE>(param), 1);
-    // }
-    //
-    // spdlog::info("Waiting for NetworkSystem::update...");
-    // WaitForSingleObject(capture_event, INFINITE);
-    // CloseHandle(capture_event);
-    // funchook_uninstall(hook, 0);
-    // funchook_destroy(hook);
-    //
-    // spdlog::info("Captured NetworkSystem @ {}", static_cast<void *>(captured_network_system));
-    //
-    // // --- Get ReflectionCtx via sigscanned member offset ---
-    //
-    // auto *offset_addr = getSymbol("NetworkSystem::mReflectionCtx");
-    // if (!offset_addr) {
-    //     FreeLibraryAndExitThread(static_cast<HMODULE>(param), 1);
-    // }
-    // auto ctx_offset = *reinterpret_cast<int32_t *>(offset_addr);
-    // auto *ctx = *reinterpret_cast<cereal::ReflectionCtx **>(
-    //     reinterpret_cast<char *>(captured_network_system) + ctx_offset);
-    // spdlog::info("mReflectionCtx offset=0x{:X}, ctx @ {}", ctx_offset, static_cast<void *>(ctx));
-
     // --- Enumerate packets ---
     std::vector<std::shared_ptr<Packet>> packets;
     for (int id = 1; id < 500; id++) {
         try {
-            auto pk = MinecraftPackets::createPacket(id);
+            auto pk = MinecraftPackets::createPacket(static_cast<MinecraftPacketIds>(id));
             if (!pk) {
                 continue;
             }
@@ -88,6 +50,13 @@ DWORD WINAPI DumpThread(LPVOID param)
     spdlog::info("Found {} packets", packets.size());
 
     // --- Extract schemas ---
+    auto server = ServiceLocator<ServerInstance>::get();
+    auto &network = static_cast<NetworkSystem &>(server->getNetwork());
+    auto &ctx = network.getPacketReflectionCtx();
+    spdlog::info("ServerInstance: {}", fmt::ptr(server.operator->()));
+    spdlog::info("NetworkSystem: {}", fmt::ptr(&network));
+    spdlog::info("NetworkSystem::vtable: {}", fmt::ptr(*reinterpret_cast<void **>(&network)));
+    spdlog::info("ReflectionCtx: {}", fmt::ptr(&ctx));
 
     // CerealSchemaReader reader;
     // if (!reader.init(ctx)) {

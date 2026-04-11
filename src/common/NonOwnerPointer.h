@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include "EnableNonOwnerReferences.h"
 
 namespace Bedrock {
@@ -10,23 +12,26 @@ public:
     NonOwnerPointer(std::nullptr_t);
     NonOwnerPointer(T *);
     NonOwnerPointer(T &);
-    NonOwnerPointer(const NonOwnerPointer &rhs);
-    NonOwnerPointer(NonOwnerPointer &&rhs);
-    ~NonOwnerPointer();
+    NonOwnerPointer(const NonOwnerPointer &rhs) = default;
+    NonOwnerPointer(NonOwnerPointer &&rhs) = default;
+    ~NonOwnerPointer() { reset(); }
     NonOwnerPointer &operator=(T *rhs);
     NonOwnerPointer &operator=(T &);
     NonOwnerPointer &operator=(const NonOwnerPointer &);
     NonOwnerPointer &operator=(NonOwnerPointer &&);
     NonOwnerPointer &operator=(std::nullptr_t);
-    void reset();
-    void resetDanglingPointer_testOnly();
-    T *operator->();
-    T &operator*();
-    T *operator->() const;
-    T &operator*() const;
-    T *access() const;
-    explicit operator bool() const;
-    bool isValid() const;
+    void reset()
+    {
+        mControlBlock.reset();
+        mPointer = nullptr;
+    }
+    T *operator->() { return _get(); }
+    T &operator*() { return *_get(); }
+    T *operator->() const { return _get(); }
+    T &operator*() const { return *_get(); }
+    T *access() const { return mPointer; }
+    explicit operator bool() const { return isValid(); }
+    bool isValid() const { return mControlBlock && mControlBlock->mIsValid; }
     void swap(NonOwnerPointer &);
     bool operator==(const NonOwnerPointer &) const;
     bool operator!=(const NonOwnerPointer &) const;
@@ -36,7 +41,7 @@ public:
 
 private:
     void _setControlBlock(const EnableNonOwnerReferences *ptr);
-    T *_get() const;
+    T *_get() const { return mPointer; }
     NonOwnerPointer(std::shared_ptr<EnableNonOwnerReferences::ControlBlock>, T *);
     std::shared_ptr<EnableNonOwnerReferences::ControlBlock> mControlBlock;
     T *mPointer;

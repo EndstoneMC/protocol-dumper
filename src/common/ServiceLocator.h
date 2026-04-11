@@ -20,8 +20,8 @@ public:
     }
     ServiceReference(Bedrock::NonOwnerPointer<T> service) : mService(service) {}
     void reset();
-    T *operator->() const;
-    Bedrock::NonOwnerPointer<T> get() const;
+    T *operator->() const { return &*mService; }
+    Bedrock::NonOwnerPointer<T> get() const { return mService; }
     operator bool() const;
     bool operator==(std::nullptr_t) const;
     bool operator!=(std::nullptr_t) const;

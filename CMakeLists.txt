@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 cmake_policy(SET CMP0135 NEW)
 project(proto_dumper LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FetchContent)
@@ -26,7 +26,11 @@ FetchContent_Declare(libhat
         URL https://github.com/BasedInc/libhat/archive/refs/tags/v0.9.0.tar.gz
         URL_HASH SHA256=b1e9e16e804d9f9bec7ccc4df4b8a1cdd281b6ec0c1377244ab28a7944a3e13a
 )
-FetchContent_MakeAvailable(entt spdlog argparse json libhat)
+FetchContent_Declare(expected-lite
+        URL https://github.com/nonstd-lite/expected-lite/archive/refs/tags/v0.10.0.tar.gz
+        URL_HASH SHA256=cfe082e4ffedeeedac47763504102646a39c080599c7c1fe99299d6a1f99af92
+)
+FetchContent_MakeAvailable(entt spdlog argparse json libhat expected-lite)
 
 add_library(proto_dumper SHARED
         src/main.cpp
@@ -36,7 +40,7 @@ add_library(proto_dumper SHARED
         src/cereal/schema/BasicSchema.cpp
 )
 target_include_directories(proto_dumper PRIVATE src)
-target_link_libraries(proto_dumper PRIVATE EnTT::EnTT spdlog::spdlog nlohmann_json::nlohmann_json libhat::libhat)
+target_link_libraries(proto_dumper PRIVATE EnTT::EnTT spdlog::spdlog nlohmann_json::nlohmann_json libhat::libhat expected-lite)
 
 add_executable(injector src/injector.cpp)
 target_link_libraries(injector PRIVATE spdlog::spdlog argparse::argparse)
