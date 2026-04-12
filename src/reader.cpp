@@ -2,7 +2,7 @@
 
 #include <fstream>
 
-#include <spdlog/spdlog.h>
+#include <print>
 
 using cereal::internal::BasicSchema;
 
@@ -15,7 +15,7 @@ CerealSchemaReader::CerealSchemaReader(const cereal::ReflectionCtx &ctx) : ctx_(
         type_index_.emplace(std::move(name), info);
     }
 
-    spdlog::info("ReflectionCtx has {} registered types", type_index_.size());
+    std::println("ReflectionCtx has {} registered types", type_index_.size());
 }
 
 std::optional<cereal::SchemaDescription> CerealSchemaReader::extractSchema(entt::type_info info)
@@ -30,7 +30,7 @@ std::optional<cereal::SchemaDescription> CerealSchemaReader::extractSchema(entt:
         return schema.description(ctx_.internal(), config);
     }
     catch (...) {
-        spdlog::error("Exception extracting schema for {}", std::string(info.name()));
+        std::println(stderr, "Exception extracting schema for {}", std::string(info.name()));
         return std::nullopt;
     }
 }

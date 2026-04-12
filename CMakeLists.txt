@@ -2,17 +2,13 @@ cmake_minimum_required(VERSION 3.21)
 cmake_policy(SET CMP0135 NEW)
 project(proto_dumper LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FetchContent)
 FetchContent_Declare(entt
         URL https://github.com/skypjack/entt/archive/1333fa53129e7cfded5a9640c4336a254049917b.tar.gz
         URL_HASH SHA256=7905419d002027a2486005fa2483dda3b26532eb1294bc791b2dcd243dcf9c1f
-)
-FetchContent_Declare(spdlog
-        URL https://github.com/gabime/spdlog/archive/refs/tags/v1.17.0.tar.gz
-        URL_HASH SHA256=d8862955c6d74e5846b3f580b1605d2428b11d97a410d86e2fb13e857cd3a744
 )
 FetchContent_Declare(argparse
         URL https://github.com/p-ranav/argparse/archive/refs/tags/v3.2.tar.gz
@@ -30,7 +26,7 @@ FetchContent_Declare(expected-lite
         URL https://github.com/nonstd-lite/expected-lite/archive/refs/tags/v0.10.0.tar.gz
         URL_HASH SHA256=cfe082e4ffedeeedac47763504102646a39c080599c7c1fe99299d6a1f99af92
 )
-FetchContent_MakeAvailable(entt spdlog argparse json libhat expected-lite)
+FetchContent_MakeAvailable(entt argparse json libhat expected-lite)
 
 add_library(proto_dumper SHARED
         src/main.cpp
@@ -40,7 +36,8 @@ add_library(proto_dumper SHARED
         src/cereal/schema/BasicSchema.cpp
 )
 target_include_directories(proto_dumper PRIVATE src)
-target_link_libraries(proto_dumper PRIVATE EnTT::EnTT spdlog::spdlog nlohmann_json::nlohmann_json libhat::libhat expected-lite)
+target_compile_definitions(proto_dumper PRIVATE nsel_CONFIG_SELECT_EXPECTED=nsel_EXPECTED_NONSTD)
+target_link_libraries(proto_dumper PRIVATE EnTT::EnTT nlohmann_json::nlohmann_json libhat::libhat expected-lite)
 
 add_executable(injector src/injector.cpp)
-target_link_libraries(injector PRIVATE spdlog::spdlog argparse::argparse)
+target_link_libraries(injector PRIVATE argparse::argparse)

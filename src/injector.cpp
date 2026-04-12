@@ -6,8 +6,9 @@
 #include <string>
 #include <thread>
 
+#include <print>
+
 #include <argparse/argparse.hpp>
-#include <spdlog/spdlog.h>
 
 static DWORD findProcess(const std::wstring &name)
 {
@@ -40,19 +41,19 @@ static bool inject(DWORD pid, const std::filesystem::path &dll_path)
     HANDLE proc = OpenProcess(
         PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION, FALSE, pid);
     if (!proc) {
-        spdlog::error("Failed to open process (error {})", GetLastError());
+        std::println("Failed to open process (error {})", GetLastError());
         return false;
     }
 
     void *remote_buf = VirtualAllocEx(proc, nullptr, path_str.size() + 1, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!remote_buf) {
-        spdlog::error("VirtualAllocEx failed (error {})", GetLastError());
+        std::println("VirtualAllocEx failed (error {})", GetLastError());
         CloseHandle(proc);
         return false;
     }
 
     if (!WriteProcessMemory(proc, remote_buf, path_str.c_str(), path_str.size() + 1, nullptr)) {
-        spdlog::error("WriteProcessMemory failed (error {})", GetLastError());
+        std::println("WriteProcessMemory failed (error {})", GetLastError());
         VirtualFreeEx(proc, remote_buf, 0, MEM_RELEASE);
         CloseHandle(proc);
         return false;
@@ -63,7 +64,7 @@ static bool inject(DWORD pid, const std::filesystem::path &dll_path)
 
     HANDLE thread = CreateRemoteThread(proc, nullptr, 0, loadLibraryAddr, remote_buf, 0, nullptr);
     if (!thread) {
-        spdlog::error("CreateRemoteThread failed (error {})", GetLastError());
+        std::println("CreateRemoteThread failed (error {})", GetLastError());
         VirtualFreeEx(proc, remote_buf, 0, MEM_RELEASE);
         CloseHandle(proc);
         return false;
@@ -99,7 +100,7 @@ int main(int argc, char *argv[])
         program.parse_args(argc, argv);
     }
     catch (const std::exception &e) {
-        spdlog::error("{}", e.what());
+        std::println("{}", e.what());
         std::cerr << program;
         return 1;
     }
@@ -119,12 +120,12 @@ int main(int argc, char *argv[])
     }
 
     if (!std::filesystem::exists(dll_path)) {
-        spdlog::error("DLL not found: {}", dll_path.string());
+        std::println("DLL not found: {}", dll_path.string());
         return 1;
     }
 
     int timeout = program.get<int>("--timeout");
-    spdlog::info("Waiting for {}...", process_name);
+    std::println("Waiting for {}...", process_name);
 
     DWORD pid = 0;
     auto start = std::chrono::steady_clock::now();
@@ -132,21 +133,21 @@ int main(int argc, char *argv[])
         if (timeout > 0) {
             auto elapsed = std::chrono::steady_clock::now() - start;
             if (elapsed >= std::chrono::seconds(timeout)) {
-                spdlog::error("Timed out waiting for {}", process_name);
+                std::println("Timed out waiting for {}", process_name);
                 return 1;
             }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 
-    spdlog::info("Found {} (PID {})", process_name, pid);
-    spdlog::info("Injecting {}...", dll_path.filename().string());
+    std::println("Found {} (PID {})", process_name, pid);
+    std::println("Injecting {}...", dll_path.filename().string());
 
     if (!inject(pid, dll_path)) {
-        spdlog::error("Injection failed");
+        std::println("Injection failed");
         return 1;
     }
 
-    spdlog::info("Injected. The DLL will dump schemas and unload itself.");
+    std::println("Injected. The DLL will dump schemas and unload itself.");
     return 0;
 }

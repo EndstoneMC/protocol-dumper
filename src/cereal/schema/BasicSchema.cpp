@@ -1,13 +1,11 @@
 #include "BasicSchema.h"
 
-#include <spdlog/spdlog.h>
-
 const cereal::internal::BasicSchema &cereal::internal::BasicSchema::lookup(const entt::meta_ctx &ctx,
                                                                            entt::type_info info)
 {
     auto type = entt::resolve(ctx, info);
     if (!type) {
-        throw std::runtime_error(fmt::format("Failed to resolve type {}", info.name()));
+        throw std::runtime_error(std::format("Failed to resolve type {}", info.name()));
     }
     TypeDescriptor &descriptor = type.custom();
     return *descriptor.mPtr;

@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <fstream>
 
-#include <spdlog/spdlog.h>
-
 using cereal::SerializationTraits;
 using cereal::SchemaDescription;
 using cereal::internal::Member;
