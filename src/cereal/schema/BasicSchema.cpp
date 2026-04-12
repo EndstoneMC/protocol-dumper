@@ -5,20 +5,16 @@
 const cereal::internal::BasicSchema &cereal::internal::BasicSchema::lookup(const entt::meta_ctx &ctx,
                                                                            entt::type_info info)
 {
-    if (auto type = entt::resolve(ctx, info)) {
-        if (auto *schema = static_cast<const BasicSchema *const *>(type.custom())) {
-            if (*schema) {
-                return **schema;
-            }
-        }
+    auto type = entt::resolve(ctx, info);
+    if (!type) {
+        throw std::runtime_error(fmt::format("Failed to resolve type {}", info.name()));
     }
-
-    spdlog::error("BasicSchema::lookup failed for type hash={}", info.hash());
-    std::terminate();
+    TypeDescriptor &descriptor = type.custom();
+    return *descriptor.mPtr;
 }
 
-cereal::SchemaDescription cereal::internal::BasicSchema::description(const cereal::internal::ReflectionContext &ctx,
-                                                                     cereal::DescriptionConfig config) const
+cereal::SchemaDescription cereal::internal::BasicSchema::description(const ReflectionContext &ctx,
+                                                                     const DescriptionConfig config) const
 {
     return makeDescription(ctx, config);
 }

@@ -12,8 +12,7 @@
 
 class CerealSchemaReader {
 public:
-    bool init(cereal::ReflectionCtx *ctx);
-
+    explicit CerealSchemaReader(const cereal::ReflectionCtx &ctx);
     std::optional<cereal::SchemaDescription> getSchema(const std::string &type_name);
 
     std::map<std::string, cereal::SchemaDescription> getAllSchemas(const std::string &name_filter = "PacketPayload");
@@ -21,7 +20,7 @@ public:
     void dumpRegisteredTypes(const std::filesystem::path &output_dir);
 
 private:
-    cereal::ReflectionCtx *ctx_ = nullptr;
+    const cereal::ReflectionCtx &ctx_;
     std::unordered_map<std::string, entt::type_info> type_index_;
 
     std::optional<cereal::SchemaDescription> extractSchema(entt::type_info info);

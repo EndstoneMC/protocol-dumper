@@ -14,21 +14,39 @@ namespace internal {
 
 struct ReflectionContext;
 
+enum class VariantPriorityLevel : uint8_t {
+    UNKNOWN = 0,
+    OTHER = 1,
+    INTEGER = 2,
+    FLOAT = 3,
+    DOUBLE = 4,
+};
+
+using UserPropertiesMap =
+    entt::dense_map<std::string, std::pair<entt::meta_type (*)(const entt::meta_ctx &), entt::basic_any<>>>;
+
 class BasicSchema {
 public:
+    struct TypeDescriptor {
+        std::unique_ptr<BasicSchema> mPtr;
+        std::string mName;
+        UserPropertiesMap mUserPropertiesMap;
+        std::string mErrorMessage;
+    };
+
     virtual ~BasicSchema() = default;
-
+    [[nodiscard]] virtual bool isGreedy(const entt::meta_ctx &) const { return false; }
+    [[nodiscard]] virtual VariantPriorityLevel minVariantPriorityLevel(const entt::meta_ctx &) const
+    {
+        return VariantPriorityLevel::UNKNOWN;
+    }
     static const BasicSchema &lookup(const entt::meta_ctx &ctx, entt::type_info info);
-    SchemaDescription description(const ReflectionContext &ctx, DescriptionConfig config) const;
-
-    struct TypeDescriptor {};
-    struct MemberDescriptor {};
+    [[nodiscard]] SchemaDescription description(const ReflectionContext &ctx, DescriptionConfig config) const;
 
 private:
-    virtual bool isGreedy(const entt::meta_ctx &) const { return false; }
     virtual void doLoad() const {}
     virtual void doSave() const {}
-    virtual SchemaDescription makeDescription(const ReflectionContext &ctx, DescriptionConfig config) const = 0;
+    [[nodiscard]] virtual SchemaDescription makeDescription(const ReflectionContext &ctx, DescriptionConfig config) const = 0;
 };
 
 }  // namespace internal

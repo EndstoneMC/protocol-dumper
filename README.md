@@ -127,6 +127,28 @@ Packet::write(BinaryStream)
 
 The read path is the exact mirror using `BinarySchemaReader` and `BasicLoader`.
 
+### Enum Wire Encoding
+
+The C++ underlying type of an enum (e.g. `enum Foo : uint8_t`) does **not** determine how it is serialized on the wire. The wire format is controlled by `mSerializationTraits` (per-field) combined with `mUnderlyingType` (for signedness/size).
+
+| `SerializationTraits` | Bits | Wire encoding |
+|---|---|---|
+| No `EnumAsValue` (0x00) | — | **String** (the enum value name) |
+| `EnumAsValue` (0x04) | bit 2 | Raw value, size based on underlying type (1 byte for Uint8, 2 for Uint16, etc.) |
+| `EnumAsValue + Compression` (0x05) | bits 0+2 | **Varint** — signed (`writeVarInt`) for Int types, unsigned (`writeUnsignedVarInt`) for Uint types |
+| `EnumAsValue + BigEndian` (0x06) | bits 1+2 | **Fixed big-endian** (`writeInt` / `writeLong`) |
+
+Cross-validated against [CloudburstMC/Protocol](https://github.com/CloudburstMC/Protocol):
+
+| Enum | Traits | Underlying | Cloudburst encoding | Confirmed |
+|---|---|---|---|---|
+| `AnimatePacket.SwingSource` | 0 (none) | Uint8 | `helper.writeString()` / `readString()` | String |
+| `AnimatePacket.Action` | 4 (EnumAsValue) | Uint8 | `buffer.writeByte()` (v898) | Raw byte |
+| `PlayerActionType` | 5 (EnumAsValue+Compression) | Int32 | `VarInts.writeInt()` / `readInt()` | Signed varint |
+| `SetTitlePacket.TitleType` | 5 (EnumAsValue+Compression) | Int32 | `VarInts.writeInt()` / `readInt()` | Signed varint |
+| `LevelSoundEvent` | 5 (EnumAsValue+Compression) | Uint32 | `VarInts.writeUnsignedInt()` / `readUnsignedInt()` | Unsigned varint |
+| `PlayStatus` | 6 (EnumAsValue+BigEndian) | Int32 | `buffer.writeInt()` / `readInt()` | Big-endian fixed32 |
+
 ### Schema Description Extraction
 
 `BasicSchema::description()` walks the same entt metadata but instead of reading/writing bytes, builds a `SchemaDescription` tree:

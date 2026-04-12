@@ -13,6 +13,8 @@
 #include "common/NetworkSystem.h"
 #include "common/Packet.h"
 #include "common/ServiceLocator.h"
+#include "generator.h"
+#include "reader.h"
 
 DWORD WINAPI DumpThread(LPVOID param)
 {
@@ -42,6 +44,9 @@ DWORD WINAPI DumpThread(LPVOID param)
                 continue;
             }
             packets.push_back(pk);
+            if (pk->getSerializationMode() == SerializationMode::ManualOnly) {
+                spdlog::warn("[{}] {}", static_cast<int>(pk->getId()), pk->getName());
+            }
         }
         catch (...) {
             break;
@@ -53,44 +58,71 @@ DWORD WINAPI DumpThread(LPVOID param)
     auto server = ServiceLocator<ServerInstance>::get();
     auto &network = static_cast<NetworkSystem &>(server->getNetwork());
     auto &ctx = network.getPacketReflectionCtx();
-    spdlog::info("ServerInstance: {}", fmt::ptr(server.operator->()));
-    spdlog::info("NetworkSystem: {}", fmt::ptr(&network));
-    spdlog::info("NetworkSystem::vtable: {}", fmt::ptr(*reinterpret_cast<void **>(&network)));
-    spdlog::info("ReflectionCtx: {}", fmt::ptr(&ctx));
+    spdlog::info("ServerInstance        @ {}", fmt::ptr(server.operator->()));
+    spdlog::info("NetworkSystem         @ {}", fmt::ptr(&network));
+    spdlog::info("NetworkSystem::vtable @ {}", fmt::ptr(*reinterpret_cast<void **>(&network)));
+    spdlog::info("ReflectionCtx         @ {}", fmt::ptr(&ctx));
 
-    // CerealSchemaReader reader;
-    // if (!reader.init(ctx)) {
-    //     FreeLibraryAndExitThread(static_cast<HMODULE>(param), 1);
-    // }
-    //
+    std::vector<SchemaGenerator::PacketEntry> entries;
+    auto &meta_ctx = ctx.internal().mMetaCtx;
+    for (auto &&[id, meta_type] : entt::resolve(meta_ctx)) {
+        auto &info = meta_type.info();
+        if (!info.name().ends_with("PacketPayload")) {
+            continue;
+        }
+        spdlog::info("{}", info.name());
+        try {
+            auto &schema = cereal::internal::BasicSchema::lookup(meta_ctx, info);
+            spdlog::info("Schema: {}", fmt::ptr(&schema));
+            spdlog::info("isGreedy: {}", static_cast<int>(schema.isGreedy(meta_ctx)));
+            spdlog::info("minVariantPriorityLevel: {}", static_cast<int>(schema.minVariantPriorityLevel(meta_ctx)));
+            cereal::DescriptionConfig config{};
+            config.mContextArea = cereal::ContextArea::ALL;
+            config.mExtraInfo = cereal::DescriptionConfig::Extra::networkingExtraInfo;
+            config.mIsTopLevel = true;
+            auto desc = schema.description(ctx.internal(), config);
+            spdlog::info("Description: {}", fmt::ptr(&desc));
+            auto raw_name = std::string(info.name());
+            auto sp = raw_name.find(' ');
+            if (sp != std::string::npos) raw_name.erase(0, sp + 1);
+            if (raw_name.ends_with("PacketPayload")) raw_name.erase(raw_name.size() - 13);
+            entries.push_back({0, std::move(raw_name), desc});
+        }
+        catch (std::exception &e) {
+            spdlog::error(e.what());
+        }
+    }
+
+    // CerealSchemaReader reader(ctx);
     // reader.dumpRegisteredTypes(output_dir);
     //
     // std::vector<ProtoGenerator::PacketEntry> entries;
     // for (const auto &pkt : packets) {
-    //     auto desc = reader.getSchema(pkt.name + "PacketPayload");
-    //     if (!desc) desc = reader.getSchema(pkt.name + "Payload");
+    //     auto name = std::string(pkt->getName());
+    //     auto desc = reader.getSchema(name + "PacketPayload");
+    //     if (!desc) {
+    //         desc = reader.getSchema(name + "Payload");
+    //     }
     //
     //     if (desc) {
-    //         entries.push_back({pkt.id, pkt.name, std::move(*desc)});
-    //         spdlog::info("  OK [{}] {}", pkt.id, pkt.name);
+    //         // entries.push_back({pkt->getName(),name, std::move(*desc)});
+    //         spdlog::info("  OK [{}] {}", static_cast<int>(pkt->getId()), pkt->getName());
     //     }
     //     else {
-    //         spdlog::warn("  SKIP [{}] {}", pkt.id, pkt.name);
+    //         spdlog::warn("  SKIP [{}] {}", static_cast<int>(pkt->getId()), pkt->getName());
     //     }
     // }
+    spdlog::info("{} / {} packets have cereal schemas", entries.size(), packets.size());
     //
-    // spdlog::info("{} / {} packets have cereal schemas", entries.size(), packets.size());
-    //
-    // ProtoGenerator gen;
-    // gen.generate(entries, output_dir);
-    // spdlog::info("Done! Output: {}", output_dir.string());
+    SchemaGenerator gen;
+    gen.generate(entries, output_dir);
+    spdlog::info("Done! Output: {}", output_dir.string());
     //
     // {
     //     std::ofstream done(output_dir / "DONE.txt");
     //     done << entries.size() << " / " << packets.size() << " packets dumped\n";
     // }
 
-    spdlog::shutdown();
     FreeLibraryAndExitThread(static_cast<HMODULE>(param), 0);
 }
 

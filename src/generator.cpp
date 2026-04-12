@@ -1,20 +1,31 @@
 #include "generator.h"
 
 #include <algorithm>
-#include <cctype>
 #include <fstream>
-#include <set>
-#include <sstream>
 
+#include <spdlog/spdlog.h>
+
+using cereal::SerializationTraits;
 using cereal::SchemaDescription;
 using cereal::internal::Member;
 using cereal::internal::ReflectedType;
+using json = nlohmann::ordered_json;
 
 // ============================================================================
-// Name helpers
+// Helpers
 // ============================================================================
 
-std::string ProtoGenerator::sanitizeName(const std::string &raw)
+static bool hasFlag(SerializationTraits traits, SerializationTraits flag)
+{
+    return (static_cast<uint8_t>(traits) & static_cast<uint8_t>(flag)) != 0;
+}
+
+static SerializationTraits getTraits(const SchemaDescription &desc)
+{
+    return desc.mSerializationTraits.value_or(SerializationTraits::None);
+}
+
+std::string SchemaGenerator::sanitizeName(const std::string &raw)
 {
     std::string result;
     result.reserve(raw.size());
@@ -29,124 +40,75 @@ std::string ProtoGenerator::sanitizeName(const std::string &raw)
     if (result.empty()) {
         result = "unknown";
     }
-    if (std::isdigit(static_cast<unsigned char>(result[0]))) {
-        result = "_" + result;
-    }
     return result;
 }
 
-std::string ProtoGenerator::toSnakeCase(const std::string &name)
-{
-    std::string s = sanitizeName(name);
-    std::string result;
-    result.reserve(s.size() + 8);
-    for (size_t i = 0; i < s.size(); i++) {
-        char c = s[i];
-        if (std::isupper(static_cast<unsigned char>(c))) {
-            if (i > 0 && (std::islower(static_cast<unsigned char>(s[i - 1])) ||
-                          (i + 1 < s.size() && std::islower(static_cast<unsigned char>(s[i + 1])) &&
-                           std::isupper(static_cast<unsigned char>(s[i - 1]))))) {
-                result += '_';
-            }
-            result += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        }
-        else {
-            result += c;
-        }
-    }
-    // Collapse multiple underscores, trim
-    std::string collapsed;
-    bool prev = false;
-    for (char c : result) {
-        if (c == '_') {
-            if (!prev) {
-                collapsed += c;
-            }
-            prev = true;
-        }
-        else {
-            collapsed += c;
-            prev = false;
-        }
-    }
-    auto start = collapsed.find_first_not_of('_');
-    auto end = collapsed.find_last_not_of('_');
-    if (start == std::string::npos) {
-        return "unknown";
-    }
-    collapsed = collapsed.substr(start, end - start + 1);
-    if (collapsed.empty()) {
-        collapsed = "unknown";
-    }
-    return collapsed;
-}
-
-std::string ProtoGenerator::toPascalCase(const std::string &name)
-{
-    std::string snake = toSnakeCase(name);
-    std::string result;
-    bool cap = true;
-    for (char c : snake) {
-        if (c == '_') {
-            cap = true;
-        }
-        else if (cap) {
-            result += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-            cap = false;
-        }
-        else {
-            result += c;
-        }
-    }
-    if (result.empty()) {
-        result = "Unknown";
-    }
-    return result;
-}
-
-std::string ProtoGenerator::toProtoFileName(const std::string &packet_name)
-{
-    return toSnakeCase(packet_name) + ".proto";
-}
-
-std::string ProtoGenerator::indent(int level)
-{
-    return std::string(level * 2, ' ');
-}
-
 // ============================================================================
-// Type mapping
+// Wire type resolution
 // ============================================================================
 
-std::string ProtoGenerator::reflectedTypeToProto(ReflectedType type)
+std::string SchemaGenerator::reflectedTypeName(ReflectedType type)
 {
     switch (type) {
-    case ReflectedType::Bool:
-        return "bool";
+    case ReflectedType::Bool:   return "bool";
+    case ReflectedType::Int8:   return "int8";
+    case ReflectedType::Uint8:  return "uint8";
+    case ReflectedType::Int16:  return "int16";
+    case ReflectedType::Uint16: return "uint16";
+    case ReflectedType::Int32:  return "int32";
+    case ReflectedType::Uint32: return "uint32";
+    case ReflectedType::Int64:  return "int64";
+    case ReflectedType::Uint64: return "uint64";
+    case ReflectedType::Float:  return "float";
+    case ReflectedType::Double: return "double";
+    case ReflectedType::String: return "string";
+    case ReflectedType::Enum:   return "enum";
+    case ReflectedType::SequenceContainer:    return "array";
+    case ReflectedType::AssociativeContainer: return "map";
+    case ReflectedType::Object: return "object";
+    default: return "unknown";
+    }
+}
+
+std::string SchemaGenerator::resolveWire(ReflectedType type, SerializationTraits traits)
+{
+    bool compress = hasFlag(traits, SerializationTraits::Compression);
+    bool big_end  = hasFlag(traits, SerializationTraits::BigEndian);
+
+    switch (type) {
+    case ReflectedType::Bool:   return "bool";
+    case ReflectedType::Float:  return "f32_le";
+    case ReflectedType::Double: return "f64_le";
+    case ReflectedType::String: return "string";
+
     case ReflectedType::Int8:
-        return "sint32";
+        return compress ? "zigzag32" : "i8";
     case ReflectedType::Uint8:
-        return "uint32";
+        return compress ? "varint32" : "u8";
+
     case ReflectedType::Int16:
-        return "sint32";
+        if (compress) return "zigzag32";
+        return big_end ? "i16_be" : "i16_le";
     case ReflectedType::Uint16:
-        return "uint32";
+        if (compress) return "varint32";
+        return big_end ? "u16_be" : "u16_le";
+
     case ReflectedType::Int32:
-        return "sint32";
+        if (compress) return "zigzag32";
+        return big_end ? "i32_be" : "i32_le";
     case ReflectedType::Uint32:
-        return "uint32";
+        if (compress) return "varint32";
+        return big_end ? "u32_be" : "u32_le";
+
     case ReflectedType::Int64:
-        return "sint64";
+        if (compress) return "zigzag64";
+        return big_end ? "i64_be" : "i64_le";
     case ReflectedType::Uint64:
-        return "uint64";
-    case ReflectedType::Float:
-        return "float";
-    case ReflectedType::Double:
-        return "double";
-    case ReflectedType::String:
-        return "string";
+        if (compress) return "varint64";
+        return big_end ? "u64_be" : "u64_le";
+
     default:
-        return "bytes";
+        return "unknown";
     }
 }
 
@@ -154,63 +116,24 @@ std::string ProtoGenerator::reflectedTypeToProto(ReflectedType type)
 // Constraint description
 // ============================================================================
 
-std::string ProtoGenerator::describeConstraints(const cereal::internal::ConstraintDescription &c)
+static json buildConstraints(const cereal::internal::ConstraintDescription &c)
 {
-    std::ostringstream ss;
-    bool first = true;
-    auto sep = [&] {
-        if (!first) {
-            ss << ", ";
-        }
-        first = false;
-    };
-
-    if (c.mMinimum || c.mMaximum) {
-        sep();
-        ss << "range: [";
-        if (c.mMinimum) {
-            ss << *c.mMinimum;
-        }
-        else {
-            ss << "-inf";
-        }
-        ss << ", ";
-        if (c.mMaximum) {
-            ss << *c.mMaximum;
-        }
-        else {
-            ss << "inf";
-        }
-        ss << "]";
-    }
-    if (c.mMinLength) {
-        sep();
-        ss << "min_length: " << *c.mMinLength;
-    }
-    if (c.mMaxLength) {
-        sep();
-        ss << "max_length: " << *c.mMaxLength;
-    }
-    if (c.mMinItems) {
-        sep();
-        ss << "min_items: " << *c.mMinItems;
-    }
-    if (c.mMaxItems) {
-        sep();
-        ss << "max_items: " << *c.mMaxItems;
-    }
-    if (c.mPattern) {
-        sep();
-        ss << "pattern: " << *c.mPattern;
-    }
-    return ss.str();
+    json j = json::object();
+    if (c.mMinimum)    j["minimum"] = *c.mMinimum;
+    if (c.mMaximum)    j["maximum"] = *c.mMaximum;
+    if (c.mMinLength)  j["min_length"] = *c.mMinLength;
+    if (c.mMaxLength)  j["max_length"] = *c.mMaxLength;
+    if (c.mMinItems)   j["min_items"] = *c.mMinItems;
+    if (c.mMaxItems)   j["max_items"] = *c.mMaxItems;
+    if (c.mPattern)    j["pattern"] = *c.mPattern;
+    return j;
 }
 
 // ============================================================================
 // Compound type collection (first pass)
 // ============================================================================
 
-void ProtoGenerator::collectCompoundTypes(const SchemaDescription &desc)
+void SchemaGenerator::collectCompoundTypes(const SchemaDescription &desc)
 {
     if (!desc.mMembers) {
         return;
@@ -223,7 +146,6 @@ void ProtoGenerator::collectCompoundTypes(const SchemaDescription &desc)
             }
             collectCompoundTypes(member);
         }
-        // Recurse into container value types
         if (member.mValueType) {
             collectCompoundTypes(*member.mValueType);
         }
@@ -233,16 +155,238 @@ void ProtoGenerator::collectCompoundTypes(const SchemaDescription &desc)
     }
 }
 
-bool ProtoGenerator::isSharedType(const std::string &type_name) const
+bool SchemaGenerator::isSharedType(const std::string &type_name) const
 {
     return shared_types_.count(type_name) > 0;
+}
+
+// ============================================================================
+// Field building
+// ============================================================================
+
+json SchemaGenerator::buildField(const std::string &field_name, const Member &member)
+{
+    json field = json::object();
+    field["name"] = field_name;
+
+    if (member.mOrdinalIndex) {
+        field["ordinal"] = *member.mOrdinalIndex;
+    }
+
+    ReflectedType rt = member.mType.value_or(ReflectedType::Null);
+    SerializationTraits traits = getTraits(member);
+
+    switch (rt) {
+
+    case ReflectedType::Enum: {
+        field["type"] = "enum";
+        if (member.mName) {
+            field["type_name"] = *member.mName;
+        }
+
+        bool enum_as_value = hasFlag(traits, SerializationTraits::EnumAsValue);
+        if (enum_as_value && member.mUnderlyingType) {
+            // Strip EnumAsValue bit, resolve wire from underlying type + remaining traits
+            auto remaining = static_cast<SerializationTraits>(
+                static_cast<uint8_t>(traits) & ~static_cast<uint8_t>(SerializationTraits::EnumAsValue));
+            field["wire"] = resolveWire(*member.mUnderlyingType, remaining);
+        }
+        else {
+            field["wire"] = "string";
+        }
+
+        if (member.mUnderlyingType) {
+            field["underlying_type"] = reflectedTypeName(*member.mUnderlyingType);
+        }
+
+        if (member.mEnumValues && !member.mEnumValues->empty()) {
+            json values = json::array();
+            for (const auto &ev : *member.mEnumValues) {
+                json v = json::object();
+                v["name"] = ev.mName;
+                v["value"] = ev.mValue;
+                if (ev.mDescription && !ev.mDescription->empty()) {
+                    v["description"] = *ev.mDescription;
+                }
+                values.push_back(std::move(v));
+            }
+            field["enum_values"] = std::move(values);
+        }
+        break;
+    }
+
+    case ReflectedType::Object: {
+        std::string type_name = member.mName.value_or(field_name);
+        field["type"] = "object";
+        field["type_name"] = type_name;
+
+        if (isSharedType(type_name)) {
+            field["shared"] = true;
+        }
+        else {
+            field["fields"] = buildFields(member);
+        }
+        break;
+    }
+
+    case ReflectedType::SequenceContainer: {
+        field["type"] = "array";
+
+        bool no_size_compress = hasFlag(traits, SerializationTraits::NoSizeCompression);
+        field["length_wire"] = no_size_compress ? "u32_le" : "varint32";
+
+        if (member.mValueType) {
+            ReflectedType elem_rt = member.mValueType->mType.value_or(ReflectedType::Null);
+            if (elem_rt == ReflectedType::Object) {
+                std::string elem_name = member.mValueType->mName.value_or(field_name + "Entry");
+                json elem = json::object();
+                elem["type"] = "object";
+                elem["type_name"] = elem_name;
+                if (isSharedType(elem_name)) {
+                    elem["shared"] = true;
+                }
+                else {
+                    elem["fields"] = buildFields(*member.mValueType);
+                }
+                field["element"] = std::move(elem);
+            }
+            else if (elem_rt == ReflectedType::Enum) {
+                // Recurse through buildField for proper enum handling
+                json elem = buildField("element", static_cast<const Member &>(*member.mValueType));
+                elem.erase("name");
+                elem.erase("ordinal");
+                field["element"] = std::move(elem);
+            }
+            else {
+                SerializationTraits elem_traits = getTraits(*member.mValueType);
+                json elem = json::object();
+                elem["type"] = reflectedTypeName(elem_rt);
+                elem["wire"] = resolveWire(elem_rt, elem_traits);
+                field["element"] = std::move(elem);
+            }
+        }
+        break;
+    }
+
+    case ReflectedType::AssociativeContainer: {
+        field["type"] = "map";
+
+        bool no_size_compress = hasFlag(traits, SerializationTraits::NoSizeCompression);
+        field["length_wire"] = no_size_compress ? "u32_le" : "varint32";
+
+        if (member.mKeyType && member.mKeyType->mType) {
+            SerializationTraits key_traits = getTraits(*member.mKeyType);
+            json key = json::object();
+            key["type"] = reflectedTypeName(*member.mKeyType->mType);
+            key["wire"] = resolveWire(*member.mKeyType->mType, key_traits);
+            field["key"] = std::move(key);
+        }
+
+        if (member.mMappedType && member.mMappedType->mType) {
+            ReflectedType val_rt = *member.mMappedType->mType;
+            if (val_rt == ReflectedType::Object) {
+                std::string obj_name = member.mMappedType->mName.value_or(field_name + "Value");
+                json val = json::object();
+                val["type"] = "object";
+                val["type_name"] = obj_name;
+                if (isSharedType(obj_name)) {
+                    val["shared"] = true;
+                }
+                else {
+                    val["fields"] = buildFields(*member.mMappedType);
+                }
+                field["value"] = std::move(val);
+            }
+            else {
+                SerializationTraits val_traits = getTraits(*member.mMappedType);
+                json val = json::object();
+                val["type"] = reflectedTypeName(val_rt);
+                val["wire"] = resolveWire(val_rt, val_traits);
+                field["value"] = std::move(val);
+            }
+        }
+        break;
+    }
+
+    default: {
+        // Primitive field
+        field["type"] = reflectedTypeName(rt);
+        field["wire"] = resolveWire(rt, traits);
+        break;
+    }
+    }
+
+    // Common optional metadata
+    if (member.mRequired) {
+        field["required"] = true;
+    }
+    if (member.mDeprecated) {
+        field["deprecated"] = true;
+    }
+    if (member.mDescription) {
+        field["description"] = *member.mDescription;
+    }
+    if (member.mConstraint) {
+        auto c = buildConstraints(*member.mConstraint);
+        if (!c.empty()) {
+            field["constraints"] = std::move(c);
+        }
+    }
+
+    return field;
+}
+
+// ============================================================================
+// Build sorted field list from SchemaDescription
+// ============================================================================
+
+json SchemaGenerator::buildFields(const SchemaDescription &desc)
+{
+    if (!desc.mMembers) {
+        return json::array();
+    }
+
+    // Collect members, then sort by ordinal index for correct wire order
+    struct FieldEntry {
+        std::string name;
+        const Member *member;
+        unsigned char ordinal;
+    };
+
+    std::vector<FieldEntry> entries;
+    entries.reserve(desc.mMembers->size());
+    for (const auto &[name, member] : *desc.mMembers) {
+        entries.push_back({name, &member, member.mOrdinalIndex.value_or(255)});
+    }
+    std::sort(entries.begin(), entries.end(), [](const FieldEntry &a, const FieldEntry &b) {
+        return a.ordinal < b.ordinal;
+    });
+
+    json fields = json::array();
+    for (const auto &entry : entries) {
+        fields.push_back(buildField(entry.name, *entry.member));
+    }
+    return fields;
+}
+
+// ============================================================================
+// Build packet JSON
+// ============================================================================
+
+json SchemaGenerator::buildPacket(const PacketEntry &packet)
+{
+    json j = json::object();
+    j["name"] = packet.name;
+    j["id"] = packet.id;
+    j["fields"] = buildFields(packet.schema);
+    return j;
 }
 
 // ============================================================================
 // Generate
 // ============================================================================
 
-void ProtoGenerator::generate(const std::vector<PacketEntry> &packets, const std::filesystem::path &output_dir)
+void SchemaGenerator::generate(const std::vector<PacketEntry> &packets, const std::filesystem::path &output_dir)
 {
     compound_type_counts_.clear();
     compound_type_descs_.clear();
@@ -257,276 +401,27 @@ void ProtoGenerator::generate(const std::vector<PacketEntry> &packets, const std
         }
     }
 
-    emitCommonTypes(output_dir);
+    // Emit shared types
+    if (!shared_types_.empty()) {
+        json common = json::object();
+        common["shared_types"] = json::object();
 
+        for (const auto &type_name : shared_types_) {
+            auto it = compound_type_descs_.find(type_name);
+            if (it == compound_type_descs_.end()) {
+                continue;
+            }
+            common["shared_types"][type_name] = buildFields(*it->second);
+        }
+
+        std::ofstream out(output_dir / "common_types.json");
+        out << common.dump(2) << "\n";
+    }
+
+    // Emit per-packet files
     for (const auto &pkt : packets) {
-        emitPacketFile(pkt, output_dir);
+        std::string filename = sanitizeName(pkt.name) + ".json";
+        std::ofstream out(output_dir / filename);
+        out << buildPacket(pkt).dump(2) << "\n";
     }
-}
-
-// ============================================================================
-// common_types.proto
-// ============================================================================
-
-void ProtoGenerator::emitCommonTypes(const std::filesystem::path &output_dir)
-{
-    if (shared_types_.empty()) {
-        return;
-    }
-
-    std::ofstream out(output_dir / "common_types.proto");
-    out << "// Auto-generated shared types from BDS cereal schema dump\n";
-    out << "syntax = \"proto3\";\n";
-    out << "package bedrock.protocol;\n\n";
-
-    for (const auto &type_name : shared_types_) {
-        auto it = compound_type_descs_.find(type_name);
-        if (it == compound_type_descs_.end()) {
-            continue;
-        }
-
-        std::string msg_name = toPascalCase(type_name);
-        emitMessage(out, msg_name, *it->second, 0);
-        out << "\n";
-    }
-}
-
-// ============================================================================
-// Per-packet .proto file
-// ============================================================================
-
-void ProtoGenerator::emitPacketFile(const PacketEntry &packet, const std::filesystem::path &output_dir)
-{
-    std::string filename = toProtoFileName(packet.name);
-    std::ofstream out(output_dir / filename);
-
-    emitted_enums_.clear();
-
-    out << "// Auto-generated from BDS cereal schema dump\n";
-    out << "// Packet: " << packet.name << " (ID: " << packet.id << ")\n";
-    out << "syntax = \"proto3\";\n";
-    out << "package bedrock.protocol;\n\n";
-
-    // Recursively check if any nested type references a shared type
-    std::function<bool(const SchemaDescription &)> needsImport = [&](const SchemaDescription &desc) -> bool {
-        if (!desc.mMembers) {
-            return false;
-        }
-        for (const auto &[n, m] : *desc.mMembers) {
-            if (m.mType && *m.mType == ReflectedType::Object && m.mName && isSharedType(*m.mName)) {
-                return true;
-            }
-            if (m.mType && *m.mType == ReflectedType::Object && needsImport(m)) {
-                return true;
-            }
-            if (m.mValueType && needsImport(*m.mValueType)) {
-                return true;
-            }
-            if (m.mMappedType && needsImport(*m.mMappedType)) {
-                return true;
-            }
-        }
-        return false;
-    };
-
-    if (needsImport(packet.schema)) {
-        out << "import \"common_types.proto\";\n\n";
-    }
-
-    std::string msg_name = toPascalCase(packet.name);
-    emitMessage(out, msg_name, packet.schema, 0);
-}
-
-// ============================================================================
-// Message emission
-// ============================================================================
-
-void ProtoGenerator::emitMessage(std::ostream &out, const std::string &msg_name, const SchemaDescription &desc, int ind)
-{
-    out << indent(ind) << "message " << msg_name << " {\n";
-
-    if (desc.mMembers) {
-        int field_num = 1;
-        for (const auto &[name, member] : *desc.mMembers) {
-            emitMember(out, name, member, field_num, ind + 1, msg_name);
-        }
-    }
-
-    out << indent(ind) << "}\n";
-}
-
-// ============================================================================
-// Member emission
-// ============================================================================
-
-void ProtoGenerator::emitMember(std::ostream &out, const std::string &field_name, const Member &member, int &field_num,
-                                int ind, const std::string &parent_msg_name)
-{
-    std::string snake = toSnakeCase(field_name);
-    if (snake.empty()) {
-        snake = "field_" + std::to_string(field_num);
-    }
-
-    ReflectedType rt = member.mType.value_or(ReflectedType::Null);
-
-    switch (rt) {
-
-    case ReflectedType::Object: {
-        std::string type_name = member.mName.value_or(field_name);
-        std::string msg = toPascalCase(type_name);
-
-        if (isSharedType(type_name)) {
-            out << indent(ind) << msg << " " << snake << " = " << field_num++ << ";\n";
-        }
-        else {
-            emitMessage(out, msg, member, ind);
-            out << indent(ind) << msg << " " << snake << " = " << field_num++ << ";\n";
-        }
-        break;
-    }
-
-    case ReflectedType::SequenceContainer: {
-        if (member.mValueType) {
-            ReflectedType elem_rt = member.mValueType->mType.value_or(ReflectedType::Null);
-            if (elem_rt == ReflectedType::Object) {
-                std::string elem_type = member.mValueType->mName.value_or(field_name + "Entry");
-                std::string msg = toPascalCase(elem_type);
-                if (!isSharedType(elem_type)) {
-                    emitMessage(out, msg, *member.mValueType, ind);
-                }
-                out << indent(ind) << "repeated " << msg << " " << snake << " = " << field_num++ << ";\n";
-            }
-            else {
-                std::string elem_proto = reflectedTypeToProto(elem_rt);
-                out << indent(ind) << "repeated " << elem_proto << " " << snake << " = " << field_num++ << ";\n";
-            }
-        }
-        else {
-            out << indent(ind) << "repeated bytes " << snake << " = " << field_num++ << ";  // unknown element type\n";
-        }
-        break;
-    }
-
-    case ReflectedType::AssociativeContainer: {
-        // proto3 map<K,V>
-        std::string key_type = "string";
-        std::string val_type = "bytes";
-        if (member.mKeyType && member.mKeyType->mType) {
-            key_type = reflectedTypeToProto(*member.mKeyType->mType);
-        }
-        if (member.mMappedType && member.mMappedType->mType) {
-            if (*member.mMappedType->mType == ReflectedType::Object) {
-                std::string obj_name = member.mMappedType->mName.value_or(field_name + "Value");
-                val_type = toPascalCase(obj_name);
-                if (!isSharedType(obj_name)) {
-                    emitMessage(out, val_type, *member.mMappedType, ind);
-                }
-            }
-            else {
-                val_type = reflectedTypeToProto(*member.mMappedType->mType);
-            }
-        }
-        out << indent(ind) << "map<" << key_type << ", " << val_type << "> " << snake << " = " << field_num++ << ";\n";
-        break;
-    }
-
-    case ReflectedType::Enum: {
-        // Emit enum definition if we have values
-        std::string enum_name = member.mName.value_or(field_name);
-        if (member.mEnumValues && !member.mEnumValues->empty()) {
-            emitEnum(out, enum_name, *member.mEnumValues, ind);
-        }
-        // Use underlying type for the field
-        std::string proto_type = "sint32";
-        if (member.mUnderlyingType) {
-            proto_type = reflectedTypeToProto(*member.mUnderlyingType);
-        }
-
-        std::string comment;
-        if (!enum_name.empty()) {
-            comment = "  // enum: " + enum_name;
-        }
-        if (member.mDeprecated) {
-            comment += "  // DEPRECATED";
-        }
-        if (member.mConstraint) {
-            auto cs = describeConstraints(*member.mConstraint);
-            if (!cs.empty()) {
-                comment += "  // " + cs;
-            }
-        }
-        out << indent(ind) << proto_type << " " << snake << " = " << field_num++ << ";" << comment << "\n";
-        break;
-    }
-
-    default: {
-        // Primitive field
-        std::string proto_type = reflectedTypeToProto(rt);
-        std::string comment;
-        if (member.mDeprecated) {
-            comment += "  // DEPRECATED";
-        }
-        if (member.mRequired) {
-            comment += "  // required";
-        }
-        if (member.mConstraint) {
-            auto cs = describeConstraints(*member.mConstraint);
-            if (!cs.empty()) {
-                comment += "  // " + cs;
-            }
-        }
-        if (member.mDescription) {
-            comment += "  // " + *member.mDescription;
-        }
-        out << indent(ind) << proto_type << " " << snake << " = " << field_num++ << ";" << comment << "\n";
-        break;
-    }
-    }
-}
-
-// ============================================================================
-// Enum emission
-// ============================================================================
-
-void ProtoGenerator::emitEnum(std::ostream &out, const std::string &enum_name,
-                              const std::vector<cereal::internal::EnumValue> &values, int ind)
-{
-    std::string pascal = toPascalCase(enum_name);
-    if (emitted_enums_.count(pascal)) {
-        return;
-    }
-    emitted_enums_.insert(pascal);
-
-    out << indent(ind) << "enum " << pascal << " {\n";
-
-    bool has_zero = false;
-    for (const auto &ev : values) {
-        if (ev.mValue == 0) {
-            has_zero = true;
-            break;
-        }
-    }
-    auto toUpper = [](std::string s) {
-        for (char &c : s) {
-            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        }
-        return s;
-    };
-    std::string prefix = toUpper(toSnakeCase(enum_name));
-
-    if (!has_zero) {
-        out << indent(ind + 1) << prefix << "_UNSPECIFIED = 0;\n";
-    }
-
-    for (const auto &ev : values) {
-        std::string full = prefix + "_" + toUpper(toSnakeCase(ev.mName));
-
-        out << indent(ind + 1) << full << " = " << ev.mValue << ";";
-        if (ev.mDescription && !ev.mDescription->empty()) {
-            out << "  // " << *ev.mDescription;
-        }
-        out << "\n";
-    }
-
-    out << indent(ind) << "}\n";
 }

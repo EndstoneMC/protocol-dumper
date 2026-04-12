@@ -56,16 +56,16 @@ struct ConstraintDescription {
     std::optional<double> mExclusiveMinimum;
     std::optional<double> mMaximum;
     std::optional<double> mExclusiveMaximum;
-    std::optional<unsigned long> mMinLength;
-    std::optional<unsigned long> mMaxLength;
+    std::optional<std::uint64_t> mMinLength;
+    std::optional<std::uint64_t> mMaxLength;
     std::optional<std::string> mPattern;
     std::optional<std::string> mRegexFlags;
-    std::optional<unsigned long> mMinItems;
-    std::optional<unsigned long> mMaxItems;
+    std::optional<std::uint64_t> mMinItems;
+    std::optional<std::uint64_t> mMaxItems;
     std::optional<bool> mNoDuplicates;
     std::shared_ptr<ConstraintDescription> mItems;
-    std::optional<unsigned long> mMinProperties;
-    std::optional<unsigned long> mMaxProperties;
+    std::optional<std::uint64_t> mMinProperties;
+    std::optional<std::uint64_t> mMaxProperties;
     std::shared_ptr<ConstraintDescription> mPropertyNames;
     std::shared_ptr<ConstraintDescription> mAdditionalProperties;
     std::optional<std::vector<long>> mEnumValues;
@@ -95,14 +95,13 @@ struct DescriptionConfig {
     using Extra = internal::DescriptionExtra;
     ContextArea mContextArea{ContextArea::ALL};
     SerializationTraits mSerializationTraits{SerializationTraits::None};
-    Extra mExtraInfo{Extra::networkingExtraInfo};
-    bool mIgnoreDeprecatedMembers{false};
-    bool mIsTopLevel{true};
+    Extra mExtraInfo;
+    bool mIgnoreDeprecatedMembers;
+    bool mIsTopLevel;
 };
 
 struct SchemaDescription : internal::SchemaInfo {
     using CerealProperties = std::map<std::string, DynamicValue>;
-
     std::optional<internal::ConstraintDescription> mConstraint;
     std::optional<std::vector<internal::EnumValue>> mEnumValues;
     std::optional<std::vector<SchemaDescription>> mParents;
