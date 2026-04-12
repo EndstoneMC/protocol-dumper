@@ -128,34 +128,36 @@ static json buildConstraints(const cereal::internal::ConstraintDescription &c)
 }
 
 // ============================================================================
-// Compound type collection (first pass)
+// Compound type collection
 // ============================================================================
 
 void SchemaGenerator::collectCompoundTypes(const SchemaDescription &desc)
 {
-    if (!desc.mMembers) {
-        return;
-    }
+    if (!desc.mMembers) return;
     for (const auto &[name, member] : *desc.mMembers) {
         if (member.mType && *member.mType == ReflectedType::Object && member.mName) {
-            compound_type_counts_[*member.mName]++;
-            if (!compound_type_descs_.count(*member.mName)) {
-                compound_type_descs_[*member.mName] = &member;
+            if (!compound_types_.count(*member.mName)) {
+                compound_types_[*member.mName] = &member;
             }
             collectCompoundTypes(member);
         }
         if (member.mValueType) {
+            if (member.mValueType->mType && *member.mValueType->mType == ReflectedType::Object && member.mValueType->mName) {
+                if (!compound_types_.count(*member.mValueType->mName)) {
+                    compound_types_[*member.mValueType->mName] = member.mValueType.get();
+                }
+            }
             collectCompoundTypes(*member.mValueType);
         }
         if (member.mMappedType) {
+            if (member.mMappedType->mType && *member.mMappedType->mType == ReflectedType::Object && member.mMappedType->mName) {
+                if (!compound_types_.count(*member.mMappedType->mName)) {
+                    compound_types_[*member.mMappedType->mName] = member.mMappedType.get();
+                }
+            }
             collectCompoundTypes(*member.mMappedType);
         }
     }
-}
-
-bool SchemaGenerator::isSharedType(const std::string &type_name) const
-{
-    return shared_types_.count(type_name) > 0;
 }
 
 // ============================================================================
@@ -184,7 +186,6 @@ json SchemaGenerator::buildField(const std::string &field_name, const Member &me
 
         bool enum_as_value = hasFlag(traits, SerializationTraits::EnumAsValue);
         if (enum_as_value && member.mUnderlyingType) {
-            // Strip EnumAsValue bit, resolve wire from underlying type + remaining traits
             auto remaining = static_cast<SerializationTraits>(
                 static_cast<uint8_t>(traits) & ~static_cast<uint8_t>(SerializationTraits::EnumAsValue));
             field["wire"] = resolveWire(*member.mUnderlyingType, remaining);
@@ -217,13 +218,7 @@ json SchemaGenerator::buildField(const std::string &field_name, const Member &me
         std::string type_name = member.mName.value_or(field_name);
         field["type"] = "object";
         field["type_name"] = type_name;
-
-        if (isSharedType(type_name)) {
-            field["shared"] = true;
-        }
-        else {
-            field["fields"] = buildFields(member);
-        }
+        field["fields"] = buildFields(member);
         break;
     }
 
@@ -240,16 +235,10 @@ json SchemaGenerator::buildField(const std::string &field_name, const Member &me
                 json elem = json::object();
                 elem["type"] = "object";
                 elem["type_name"] = elem_name;
-                if (isSharedType(elem_name)) {
-                    elem["shared"] = true;
-                }
-                else {
-                    elem["fields"] = buildFields(*member.mValueType);
-                }
+                elem["fields"] = buildFields(*member.mValueType);
                 field["element"] = std::move(elem);
             }
             else if (elem_rt == ReflectedType::Enum) {
-                // Recurse through buildField for proper enum handling
                 json elem = buildField("element", static_cast<const Member &>(*member.mValueType));
                 elem.erase("name");
                 elem.erase("ordinal");
@@ -287,12 +276,7 @@ json SchemaGenerator::buildField(const std::string &field_name, const Member &me
                 json val = json::object();
                 val["type"] = "object";
                 val["type_name"] = obj_name;
-                if (isSharedType(obj_name)) {
-                    val["shared"] = true;
-                }
-                else {
-                    val["fields"] = buildFields(*member.mMappedType);
-                }
+                val["fields"] = buildFields(*member.mMappedType);
                 field["value"] = std::move(val);
             }
             else {
@@ -307,14 +291,12 @@ json SchemaGenerator::buildField(const std::string &field_name, const Member &me
     }
 
     default: {
-        // Primitive field
         field["type"] = reflectedTypeName(rt);
         field["wire"] = resolveWire(rt, traits);
         break;
     }
     }
 
-    // Common optional metadata
     if (member.mRequired) {
         field["required"] = true;
     }
@@ -344,7 +326,6 @@ json SchemaGenerator::buildFields(const SchemaDescription &desc)
         return json::array();
     }
 
-    // Collect members, then sort by ordinal index for correct wire order
     struct FieldEntry {
         std::string name;
         const Member *member;
@@ -386,40 +367,33 @@ json SchemaGenerator::buildPacket(const PacketEntry &packet)
 
 void SchemaGenerator::generate(const std::vector<PacketEntry> &packets, const std::filesystem::path &output_dir)
 {
-    compound_type_counts_.clear();
-    compound_type_descs_.clear();
-    shared_types_.clear();
+    compound_types_.clear();
 
+    auto packets_dir = output_dir / "packets";
+    auto types_dir = output_dir / "types";
+    std::filesystem::create_directories(packets_dir);
+    std::filesystem::create_directories(types_dir);
+
+    // Collect all compound types while building packet JSON
     for (const auto &pkt : packets) {
         collectCompoundTypes(pkt.schema);
-    }
-    for (const auto &[name, count] : compound_type_counts_) {
-        if (count >= 2) {
-            shared_types_.insert(name);
-        }
-    }
-
-    // Emit shared types
-    if (!shared_types_.empty()) {
-        json common = json::object();
-        common["shared_types"] = json::object();
-
-        for (const auto &type_name : shared_types_) {
-            auto it = compound_type_descs_.find(type_name);
-            if (it == compound_type_descs_.end()) {
-                continue;
-            }
-            common["shared_types"][type_name] = buildFields(*it->second);
-        }
-
-        std::ofstream out(output_dir / "common_types.json");
-        out << common.dump(2) << "\n";
     }
 
     // Emit per-packet files
     for (const auto &pkt : packets) {
         std::string filename = sanitizeName(pkt.name) + ".json";
-        std::ofstream out(output_dir / filename);
+        std::ofstream out(packets_dir / filename);
         out << buildPacket(pkt).dump(2) << "\n";
+    }
+
+    // Emit per-type files
+    for (const auto &[type_name, desc] : compound_types_) {
+        json j = json::object();
+        j["name"] = type_name;
+        j["fields"] = buildFields(*desc);
+
+        std::string filename = sanitizeName(type_name) + ".json";
+        std::ofstream out(types_dir / filename);
+        out << j.dump(2) << "\n";
     }
 }

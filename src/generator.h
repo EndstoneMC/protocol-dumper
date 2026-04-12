@@ -2,7 +2,6 @@
 
 #include <filesystem>
 #include <map>
-#include <set>
 #include <string>
 #include <vector>
 
@@ -22,7 +21,6 @@ public:
 
 private:
     void collectCompoundTypes(const cereal::SchemaDescription &desc);
-    bool isSharedType(const std::string &type_name) const;
 
     nlohmann::ordered_json buildPacket(const PacketEntry &packet);
     nlohmann::ordered_json buildFields(const cereal::SchemaDescription &desc);
@@ -32,7 +30,6 @@ private:
     static std::string reflectedTypeName(cereal::internal::ReflectedType type);
     static std::string sanitizeName(const std::string &raw);
 
-    std::map<std::string, int> compound_type_counts_;
-    std::map<std::string, const cereal::SchemaDescription *> compound_type_descs_;
-    std::set<std::string> shared_types_;
+    // Collect every unique compound type encountered during field building
+    std::map<std::string, const cereal::SchemaDescription *> compound_types_;
 };

@@ -1,7 +1,6 @@
 #include <Windows.h>
 
 #include <filesystem>
-#include <fstream>
 #include <print>
 #include <string>
 #include <vector>
@@ -76,15 +75,28 @@ static void DumpSchemas(HMODULE hDll)
             packet_name.erase(0, pos + 1);
         }
 
-        auto packet_id = entt::any_cast<int>(it->second.second);
-        std::println("[{}] {}", packet_id, packet_name);
+        int packet_id = entt::any_cast<int>(it->second.second);
 
-        auto &schema = *descriptor->mPtr;
-        auto desc = schema.description(ctx.internal(), config);
-
-        if (packet_name.ends_with("Packet")) {
-            packet_name.erase(packet_name.size() - 6);
+        // Follow readAndWriteAs: find the meta function whose return type
+        // has a TypeDescriptor with a BasicSchema — that's the payload type.
+        cereal::internal::BasicSchema *payload_schema = nullptr;
+        for (auto &&[func_id, func] : meta_type.func()) {
+            auto ret = func.ret();
+            auto *ret_desc = static_cast<cereal::internal::BasicSchema::TypeDescriptor *>(ret.custom());
+            if (ret_desc && ret_desc->mPtr) {
+                payload_schema = ret_desc->mPtr.get();
+                break;
+            }
         }
+
+        if (!payload_schema) {
+            std::println(stderr, "[{}] {} - no payload schema", packet_id, packet_name);
+            continue;
+        }
+
+        auto desc = payload_schema->description(ctx.internal(), config);
+
+        std::println("[{}] {}", packet_id, packet_name);
         entries.push_back({packet_id, std::move(packet_name), desc});
     }
 
