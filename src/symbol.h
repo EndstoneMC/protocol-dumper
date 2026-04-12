@@ -1,5 +1,7 @@
 #pragma once
 
+inline bool g_bds_preview = false;
+
 template <typename Return, typename... Args>
 Return (*fp_cast(Return (*)(Args...), void *addr))(Args...)
 {

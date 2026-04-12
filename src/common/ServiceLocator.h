@@ -44,10 +44,15 @@ template <>
 inline ServiceReference<ServerInstance> ServiceLocator<ServerInstance>::get()
 {
     static auto addr = []() -> std::byte * {
-        auto signature = hat::compile_signature<"E8 ? ? ? ? 90 4C 8B 6D ? 4D 85 ED 0F 84">();
-        auto result = hat::find_pattern(signature, ".text");
+        hat::scan_result result;
+        if (g_bds_preview) {
+            result = hat::find_pattern(hat::compile_signature<"E8 ? ? ? ? 90 4C 8B 6D ? 4D 85 ED 0F 84">(), ".text");
+        }
+        else {
+            result = hat::find_pattern(hat::compile_signature<"E8 ? ? ? ? 90 4C 8B 6D ? 4D 85 ED 0F 84">(), ".text");
+        }
         if (!result.has_result()) {
-            throw std::runtime_error("Failed to find pattern");
+            throw std::runtime_error("Sigscan failed: ServiceLocator<ServerInstance>::get()");
         }
         return result.rel(1);
     }();

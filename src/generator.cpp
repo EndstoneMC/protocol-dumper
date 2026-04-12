@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <set>
 
 using cereal::SerializationTraits;
 using cereal::SchemaDescription;
@@ -31,7 +32,7 @@ std::string SchemaGenerator::sanitizeName(const std::string &raw)
         if (std::isalnum(static_cast<unsigned char>(c)) || c == '_') {
             result += c;
         }
-        else if (c == ' ' || c == '-') {
+        else if (c == ':' || c == ' ' || c == '-') {
             result += '_';
         }
     }
@@ -128,39 +129,6 @@ static json buildConstraints(const cereal::internal::ConstraintDescription &c)
 }
 
 // ============================================================================
-// Compound type collection
-// ============================================================================
-
-void SchemaGenerator::collectCompoundTypes(const SchemaDescription &desc)
-{
-    if (!desc.mMembers) return;
-    for (const auto &[name, member] : *desc.mMembers) {
-        if (member.mType && *member.mType == ReflectedType::Object && member.mName) {
-            if (!compound_types_.count(*member.mName)) {
-                compound_types_[*member.mName] = &member;
-            }
-            collectCompoundTypes(member);
-        }
-        if (member.mValueType) {
-            if (member.mValueType->mType && *member.mValueType->mType == ReflectedType::Object && member.mValueType->mName) {
-                if (!compound_types_.count(*member.mValueType->mName)) {
-                    compound_types_[*member.mValueType->mName] = member.mValueType.get();
-                }
-            }
-            collectCompoundTypes(*member.mValueType);
-        }
-        if (member.mMappedType) {
-            if (member.mMappedType->mType && *member.mMappedType->mType == ReflectedType::Object && member.mMappedType->mName) {
-                if (!compound_types_.count(*member.mMappedType->mName)) {
-                    compound_types_[*member.mMappedType->mName] = member.mMappedType.get();
-                }
-            }
-            collectCompoundTypes(*member.mMappedType);
-        }
-    }
-}
-
-// ============================================================================
 // Field building
 // ============================================================================
 
@@ -197,28 +165,12 @@ json SchemaGenerator::buildField(const std::string &field_name, const Member &me
         if (member.mUnderlyingType) {
             field["underlying_type"] = reflectedTypeName(*member.mUnderlyingType);
         }
-
-        if (member.mEnumValues && !member.mEnumValues->empty()) {
-            json values = json::array();
-            for (const auto &ev : *member.mEnumValues) {
-                json v = json::object();
-                v["name"] = ev.mName;
-                v["value"] = ev.mValue;
-                if (ev.mDescription && !ev.mDescription->empty()) {
-                    v["description"] = *ev.mDescription;
-                }
-                values.push_back(std::move(v));
-            }
-            field["enum_values"] = std::move(values);
-        }
         break;
     }
 
     case ReflectedType::Object: {
-        std::string type_name = member.mName.value_or(field_name);
         field["type"] = "object";
-        field["type_name"] = type_name;
-        field["fields"] = buildFields(member);
+        field["type_name"] = member.mName.value_or(field_name);
         break;
     }
 
@@ -231,11 +183,9 @@ json SchemaGenerator::buildField(const std::string &field_name, const Member &me
         if (member.mValueType) {
             ReflectedType elem_rt = member.mValueType->mType.value_or(ReflectedType::Null);
             if (elem_rt == ReflectedType::Object) {
-                std::string elem_name = member.mValueType->mName.value_or(field_name + "Entry");
                 json elem = json::object();
                 elem["type"] = "object";
-                elem["type_name"] = elem_name;
-                elem["fields"] = buildFields(*member.mValueType);
+                elem["type_name"] = member.mValueType->mName.value_or(field_name + "Entry");
                 field["element"] = std::move(elem);
             }
             else if (elem_rt == ReflectedType::Enum) {
@@ -272,11 +222,9 @@ json SchemaGenerator::buildField(const std::string &field_name, const Member &me
         if (member.mMappedType && member.mMappedType->mType) {
             ReflectedType val_rt = *member.mMappedType->mType;
             if (val_rt == ReflectedType::Object) {
-                std::string obj_name = member.mMappedType->mName.value_or(field_name + "Value");
                 json val = json::object();
                 val["type"] = "object";
-                val["type_name"] = obj_name;
-                val["fields"] = buildFields(*member.mMappedType);
+                val["type_name"] = member.mMappedType->mName.value_or(field_name + "Value");
                 field["value"] = std::move(val);
             }
             else {
@@ -349,7 +297,7 @@ json SchemaGenerator::buildFields(const SchemaDescription &desc)
 }
 
 // ============================================================================
-// Build packet JSON
+// Build JSON objects
 // ============================================================================
 
 json SchemaGenerator::buildPacket(const PacketEntry &packet)
@@ -361,39 +309,79 @@ json SchemaGenerator::buildPacket(const PacketEntry &packet)
     return j;
 }
 
+json SchemaGenerator::buildType(const TypeEntry &type)
+{
+    json j = json::object();
+    j["name"] = type.name;
+
+    auto rt = type.schema.mType.value_or(ReflectedType::Null);
+
+    if (rt == ReflectedType::Enum) {
+        j["type"] = "enum";
+        if (type.schema.mUnderlyingType) {
+            j["underlying_type"] = reflectedTypeName(*type.schema.mUnderlyingType);
+        }
+        if (type.schema.mEnumValues && !type.schema.mEnumValues->empty()) {
+            json values = json::array();
+            for (const auto &ev : *type.schema.mEnumValues) {
+                json v = json::object();
+                v["name"] = ev.mName;
+                v["value"] = ev.mValue;
+                if (ev.mDescription && !ev.mDescription->empty()) {
+                    v["description"] = *ev.mDescription;
+                }
+                values.push_back(std::move(v));
+            }
+            j["enum_values"] = std::move(values);
+        }
+    }
+    else if (type.schema.mSetters && !type.schema.mSetters->empty()) {
+        // Type with setter (e.g., MinEngineVersion serializes as string via alsoReadAs)
+        auto &setter = type.schema.mSetters->front();
+        auto setter_rt = setter.mType.value_or(ReflectedType::Null);
+        j["type"] = "alias";
+        j["underlying_type"] = reflectedTypeName(setter_rt);
+        j["wire"] = resolveWire(setter_rt, getTraits(setter));
+    }
+    else {
+        j["fields"] = buildFields(type.schema);
+    }
+
+    return j;
+}
+
 // ============================================================================
 // Generate
 // ============================================================================
 
-void SchemaGenerator::generate(const std::vector<PacketEntry> &packets, const std::filesystem::path &output_dir)
+void SchemaGenerator::generate(const std::vector<PacketEntry> &packets,
+                               const std::vector<TypeEntry> &types,
+                               const std::filesystem::path &output_dir)
 {
-    compound_types_.clear();
-
     auto packets_dir = output_dir / "packets";
     auto types_dir = output_dir / "types";
     std::filesystem::create_directories(packets_dir);
     std::filesystem::create_directories(types_dir);
 
-    // Collect all compound types while building packet JSON
-    for (const auto &pkt : packets) {
-        collectCompoundTypes(pkt.schema);
-    }
-
-    // Emit per-packet files
     for (const auto &pkt : packets) {
         std::string filename = sanitizeName(pkt.name) + ".json";
         std::ofstream out(packets_dir / filename);
         out << buildPacket(pkt).dump(2) << "\n";
     }
 
-    // Emit per-type files
-    for (const auto &[type_name, desc] : compound_types_) {
-        json j = json::object();
-        j["name"] = type_name;
-        j["fields"] = buildFields(*desc);
+    std::set<std::string> emitted_types;
+    for (const auto &type : types) {
+        // Strip template args for filename dedup: "SharedTypes::Reference<5>" → "SharedTypes::Reference"
+        auto base_name = type.name;
+        if (auto pos = base_name.find('<'); pos != std::string::npos) {
+            base_name.erase(pos);
+        }
+        std::string filename = sanitizeName(base_name) + ".json";
+        if (!emitted_types.insert(filename).second) continue;
 
-        std::string filename = sanitizeName(type_name) + ".json";
+        // Use base name in the output
+        TypeEntry deduped{base_name, type.schema};
         std::ofstream out(types_dir / filename);
-        out << j.dump(2) << "\n";
+        out << buildType(deduped).dump(2) << "\n";
     }
 }
