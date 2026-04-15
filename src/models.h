@@ -71,11 +71,8 @@ public:
         std::string mName;
         std::string mTypeName;
     };
-    struct Alternative {
-        std::string mTypeName;
-    };
     Tag mTag;
-    std::vector<Alternative> mAlternatives;
+    std::vector<std::string> mOf;
     Json toJson() const override;
 };
 

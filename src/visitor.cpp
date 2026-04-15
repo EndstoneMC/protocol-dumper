@@ -179,13 +179,13 @@ std::unique_ptr<model::FieldType> Visitor::buildVariant(const entt::meta_type &v
     }
 
     const auto arity = variantType.template_arity();
-    vt->mAlternatives.reserve(arity);
+    vt->mOf.reserve(arity);
     for (auto i = 0; i < arity; ++i) {
         auto alt = variantType.template_arg(i);
         if (!alt) {
             continue;
         }
-        vt->mAlternatives.push_back({std::string{stripTypePrefix(alt.info().name())}});
+        vt->mOf.emplace_back(stripTypePrefix(alt.info().name()));
     }
     return vt;
 }

@@ -70,11 +70,7 @@ Json VariantFieldType::toJson() const
         if (!mTag.mTypeName.empty()) tag["type"] = mTag.mTypeName;
         j["tag"] = std::move(tag);
     }
-    Json alts = Json::array();
-    for (const auto &a : mAlternatives) {
-        alts.push_back(Json{{"type", a.mTypeName}});
-    }
-    j["alternatives"] = std::move(alts);
+    j["of"] = mOf;
     return j;
 }
 
