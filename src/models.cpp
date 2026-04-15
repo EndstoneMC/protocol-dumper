@@ -27,7 +27,7 @@ Json ScalarFieldType::toJson() const
 
 Json EnumFieldType::toJson() const
 {
-    return Json{{"type", mTypeName}, {"as", mWire}};
+    return Json{{"enum", mTypeName}, {"type", mWire}};
 }
 
 Json ObjectFieldType::toJson() const
@@ -70,7 +70,7 @@ Json VariantFieldType::toJson() const
         if (!mTag.mTypeName.empty()) tag["type"] = mTag.mTypeName;
         j["tag"] = std::move(tag);
     }
-    j["of"] = mOf;
+    j["values"] = mOf;
     return j;
 }
 
