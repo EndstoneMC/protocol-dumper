@@ -116,6 +116,11 @@ bool isOptional(const entt::meta_type &t)
     return t && stripTypePrefix(t.info().name()).starts_with("std::optional<");
 }
 
+bool isVariant(const entt::meta_type &t)
+{
+    return t && stripTypePrefix(t.info().name()).starts_with("std::variant<");
+}
+
 bool isScalarRT(ReflectedType rt)
 {
     switch (rt) {
@@ -153,6 +158,37 @@ private:
 }  // namespace
 
 Visitor::Visitor(const entt::meta_ctx &ctx, AliasMap aliases) : mAliases(std::move(aliases)), mMetaCtx(ctx) {}
+
+std::unique_ptr<model::FieldType> Visitor::buildVariant(const entt::meta_type &variantType) const
+{
+    auto vt = std::make_unique<model::VariantFieldType>();
+    if (!variantType) {
+        return vt;
+    }
+
+    // TaggedVariantDescriptor is attached as custom on the variant *type* node itself.
+    // mTaggedName is the tag field name on the parent; mResolve yields the tag's enum type.
+    // The enum-value → alternative mapping is a follow-up once the enum binding is decompiled.
+    if (cereal::internal::BasicSchema::TaggedVariantDescriptor *tvd = variantType.custom()) {
+        vt->mTag.mName = tvd->mTaggedName;
+        if (tvd->mResolve) {
+            if (auto tagType = tvd->mResolve(mMetaCtx)) {
+                vt->mTag.mTypeName = std::string{stripTypePrefix(tagType.info().name())};
+            }
+        }
+    }
+
+    const auto arity = variantType.template_arity();
+    vt->mAlternatives.reserve(arity);
+    for (auto i = 0; i < arity; ++i) {
+        auto alt = variantType.template_arg(i);
+        if (!alt) {
+            continue;
+        }
+        vt->mAlternatives.push_back({std::string{stripTypePrefix(alt.info().name())}});
+    }
+    return vt;
+}
 
 bool Visitor::isAlias(std::string_view name) const
 {
@@ -308,6 +344,11 @@ void Visitor::visitField(const std::string &name, const Member &member)
         }
     }
 
+    if (isVariant(declaredType)) {
+        target->mType = buildVariant(declaredType);
+        return;
+    }
+
     {
         ScopedAssign slotGuard{mTypeSlot, &target->mType};
         visit(member);
@@ -327,7 +368,7 @@ void Visitor::visitStructFields(const cereal::SchemaDescription &desc)
     }
 
     entt::meta_type parent = desc.mId ? entt::resolve(mMetaCtx, desc.mId) : entt::meta_type{};
-    ScopedAssign metaGuard{mCurrentMetaType, std::move(parent)};
+    ScopedAssign metaGuard{mCurrentMetaType, parent};
 
     struct Entry {
         const std::string *name;

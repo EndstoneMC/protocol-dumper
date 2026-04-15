@@ -42,6 +42,7 @@ protected:
 
 private:
     [[nodiscard]] bool isAlias(std::string_view name) const;
+    [[nodiscard]] std::unique_ptr<model::FieldType> buildVariant(const entt::meta_type &variantType) const;
     void visitStructFields(const cereal::SchemaDescription &desc);
 
     std::vector<model::Packet> mPackets;

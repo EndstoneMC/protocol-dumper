@@ -65,6 +65,20 @@ public:
     Json toJson() const override;
 };
 
+class VariantFieldType final : public FieldType {
+public:
+    struct Tag {
+        std::string mName;
+        std::string mTypeName;
+    };
+    struct Alternative {
+        std::string mTypeName;
+    };
+    Tag mTag;
+    std::vector<Alternative> mAlternatives;
+    Json toJson() const override;
+};
+
 class Member {
 public:
     virtual ~Member() = default;

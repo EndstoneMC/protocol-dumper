@@ -60,6 +60,24 @@ Json MapFieldType::toJson() const
     return j;
 }
 
+Json VariantFieldType::toJson() const
+{
+    Json j = Json::object();
+    j["type"] = "variant";
+    if (!mTag.mName.empty() || !mTag.mTypeName.empty()) {
+        Json tag = Json::object();
+        if (!mTag.mName.empty()) tag["name"] = mTag.mName;
+        if (!mTag.mTypeName.empty()) tag["type"] = mTag.mTypeName;
+        j["tag"] = std::move(tag);
+    }
+    Json alts = Json::array();
+    for (const auto &a : mAlternatives) {
+        alts.push_back(Json{{"type", a.mTypeName}});
+    }
+    j["alternatives"] = std::move(alts);
+    return j;
+}
+
 Json Field::toJson() const
 {
     Json j = Json::object();
