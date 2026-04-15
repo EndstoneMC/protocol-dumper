@@ -30,11 +30,13 @@ private:
 };
 }  // namespace Core
 
+struct ServerInstanceArguments;
 class ServerInstance : public Bedrock::EnableNonOwnerReferences,
                        public AppPlatformListener,
                        public GameCallbacks,
                        public Core::StorageAreaStateListener {
 public:
+    ServerInstance(ServerInstanceArguments &&);
     ServerNetworkSystem &getNetwork() { return *mNetwork; }
     std::chrono::steady_clock::time_point mLastSyncTime;
 

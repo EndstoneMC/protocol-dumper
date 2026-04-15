@@ -41,6 +41,9 @@ private:
 class NetworkSystem : public RakNetConnector::ConnectionCallbacks,
                       public RakPeerHelper::IPSupportInterface,
                       public NetworkEnableDisableListener {
+    struct Dependencies;
+    NetworkSystem(Dependencies &&);
+
 public:
     [[nodiscard]] const cereal::ReflectionCtx &getPacketReflectionCtx() const { return *mReflectionCtx; }
 

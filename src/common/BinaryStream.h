@@ -2,6 +2,8 @@
 
 class ReadOnlyBinaryStream {
 public:
+    explicit ReadOnlyBinaryStream(std::string &&buffer);
+    explicit ReadOnlyBinaryStream(std::string_view buffer, bool copyBuffer);
     virtual ~ReadOnlyBinaryStream() = default;
 
 protected:
@@ -14,6 +16,9 @@ private:
 };
 
 class BinaryStream : public ReadOnlyBinaryStream {
+public:
+    BinaryStream();
+
 private:
     std::string &mBuffer;
 };

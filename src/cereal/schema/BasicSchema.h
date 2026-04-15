@@ -10,9 +10,15 @@
 #include "SchemaDescription.h"
 
 namespace cereal {
+
+struct SchemaWriter;
+struct SchemaReader;
+
 namespace internal {
 
 struct ReflectionContext;
+struct LoadState;
+struct SaveState;
 
 enum class VariantPriorityLevel : uint8_t {
     UNKNOWN = 0,
@@ -44,9 +50,15 @@ public:
     [[nodiscard]] SchemaDescription description(const ReflectionContext &ctx, DescriptionConfig config) const;
 
 private:
-    virtual void doLoad() const {}
-    virtual void doSave() const {}
-    [[nodiscard]] virtual SchemaDescription makeDescription(const ReflectionContext &ctx, DescriptionConfig config) const = 0;
+    virtual void doLoad(SchemaReader &reader, entt::meta_any &any, const entt::meta_any &udata,
+                        const LoadState &state) const
+    {
+    }
+    virtual void doSave(SchemaWriter &writer, const entt::meta_any &any, const SaveState &state) const {}
+    virtual void unknown1() {}  // TODO: figure out the actual function signature
+    virtual void unknown2() {}
+    [[nodiscard]] virtual SchemaDescription makeDescription(const ReflectionContext &ctx,
+                                                            DescriptionConfig config) const = 0;
 };
 
 }  // namespace internal

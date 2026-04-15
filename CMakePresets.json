@@ -3,20 +3,37 @@
     "cmakeMinimumRequired": { "major": 3, "minor": 29, "patch": 0 },
     "configurePresets": [
         {
-            "name": "clang-cl",
-            "displayName": "clang-cl + lld-link (Release)",
+            "name": "clang-cl-base",
+            "hidden": true,
             "generator": "Ninja",
-            "binaryDir": "${sourceDir}/build",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release",
                 "CMAKE_C_COMPILER": "clang-cl",
                 "CMAKE_CXX_COMPILER": "clang-cl",
                 "CMAKE_LINKER_TYPE": "LLD",
                 "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL"
             }
+        },
+        {
+            "name": "clang-cl-release",
+            "displayName": "clang-cl + lld-link (Release)",
+            "inherits": "clang-cl-base",
+            "binaryDir": "${sourceDir}/build/release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "clang-cl-relwithdebinfo",
+            "displayName": "clang-cl + lld-link (RelWithDebInfo)",
+            "inherits": "clang-cl-base",
+            "binaryDir": "${sourceDir}/build/relwithdebinfo",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+            }
         }
     ],
     "buildPresets": [
-        { "name": "clang-cl", "configurePreset": "clang-cl" }
+        { "name": "clang-cl-release", "configurePreset": "clang-cl-release" },
+        { "name": "clang-cl-relwithdebinfo", "configurePreset": "clang-cl-relwithdebinfo" }
     ]
 }

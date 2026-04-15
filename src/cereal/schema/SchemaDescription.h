@@ -47,7 +47,8 @@ enum class DescriptionExtra : uint8_t {
     ordinalIndex = 8,
     numericLimits = 16,
     nonPublicFlag = 32,
-    networkingExtraInfo = 15,
+    networkingExtraInfo = underlyingType | controlValueType | serializationTraits | ordinalIndex,
+    _entt_enum_as_bitmask
 };
 
 struct ConstraintDescription {

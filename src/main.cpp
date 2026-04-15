@@ -1,9 +1,11 @@
 #include <Windows.h>
 
 #include <filesystem>
-#include <map>
+#include <memory>
 #include <print>
+#include <ranges>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "cereal/Context.h"
@@ -11,39 +13,49 @@
 #include "common/NetworkSystem.h"
 #include "common/Packet.h"
 #include "common/ServiceLocator.h"
-#include "generator.h"
+#include "json_writer.h"
+#include "visitor.h"
 
-static void fixNames(cereal::SchemaDescription &desc, const std::map<std::string, std::string> &names)
+// Strip MSVC RTTI prefixes like "struct ", "class ", "enum ", "union " from a type name.
+// Handles combined forms such as "enum class Foo::Bar".
+static std::string stripTypePrefix(std::string name)
 {
-    if (desc.mName) {
-        if (auto it = names.find(*desc.mName); it != names.end()) {
-            desc.mName = it->second;
+    constexpr std::string_view kPrefixes[] = {"struct ", "class ", "enum ", "union "};
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (auto p : kPrefixes) {
+            if (name.starts_with(p)) {
+                name.erase(0, p.size());
+                changed = true;
+                break;
+            }
         }
     }
-    if (desc.mMembers) {
-        for (auto &[k, member] : *desc.mMembers) {
-            fixNames(member, names);
+    return name;
+}
+
+static void ListPackets()
+{
+    int i = 0;
+    std::println("=== BDS Packet List ===");
+    for (int id = 1; id < 1024; id++) {
+        try {
+            auto pk = MinecraftPackets::createPacket(static_cast<MinecraftPacketIds>(id));
+            if (!pk) {
+                continue;
+            }
+            ++i;
+            if (pk->getSerializationMode() == SerializationMode::ManualOnly) {
+                std::println(stderr, "[{}] {} has manual only serialization mode.", static_cast<int>(pk->getId()),
+                             pk->getName());
+            }
+        }
+        catch (...) {
+            break;
         }
     }
-    if (desc.mValueType) {
-        fixNames(*desc.mValueType, names);
-    }
-    if (desc.mKeyType) {
-        fixNames(*desc.mKeyType, names);
-    }
-    if (desc.mMappedType) {
-        fixNames(*desc.mMappedType, names);
-    }
-    if (desc.mParents) {
-        for (auto &p : *desc.mParents) {
-            fixNames(p, names);
-        }
-    }
-    if (desc.mSetters) {
-        for (auto &s : *desc.mSetters) {
-            fixNames(s, names);
-        }
-    }
+    std::println("Found {} packets", i);
 }
 
 static void DumpSchemas()
@@ -67,7 +79,8 @@ static void DumpSchemas()
             }
             packets.push_back(pk);
             if (pk->getSerializationMode() == SerializationMode::ManualOnly) {
-                std::println(stderr, "[{}] {} has manual only serialization mode.", static_cast<int>(pk->getId()), pk->getName());
+                std::println(stderr, "[{}] {} has manual only serialization mode.", static_cast<int>(pk->getId()),
+                             pk->getName());
             }
         }
         catch (...) {
@@ -85,93 +98,118 @@ static void DumpSchemas()
     std::println("NetworkSystem::vtable @ {}", *reinterpret_cast<void **>(&network));
     std::println("ReflectionCtx         @ {}", static_cast<const void *>(&ctx));
 
-    std::vector<SchemaGenerator::PacketEntry> packet_entries;
-    std::vector<SchemaGenerator::TypeEntry> type_entries;
     auto &meta_ctx = ctx.internal().mMetaCtx;
 
-    // Build name map: BDS mName (spaces) → entt proper name (::)
-    std::map<std::string, std::string> name_map;
-    for (auto &&[id, meta_type] : entt::resolve(meta_ctx)) {
-        auto *descriptor = static_cast<cereal::internal::BasicSchema::TypeDescriptor *>(meta_type.custom());
-        if (!descriptor) {
-            continue;
-        }
-
-        auto proper = std::string(meta_type.info().name());
-        if (auto sp = proper.find(' '); sp != std::string::npos) {
-            proper.erase(0, sp + 1);
-        }
-
-        if (!descriptor->mName.empty() && descriptor->mName != proper) {
-            name_map[descriptor->mName] = proper;
-        }
-    }
-
     cereal::DescriptionConfig config{};
+    using Extra = cereal::DescriptionConfig::Extra;
     config.mContextArea = cereal::ContextArea::ALL;
-    config.mExtraInfo = cereal::DescriptionConfig::Extra::networkingExtraInfo;
+    config.mExtraInfo = Extra::networkingExtraInfo | Extra::nonPublicFlag;
     config.mIsTopLevel = true;
 
-    for (auto &&[id, meta_type] : entt::resolve(meta_ctx)) {
+    std::println("Resolving meta context...");
+
+    struct PacketSource {
+        int id;
+        std::string name;
+        cereal::SchemaDescription desc;
+    };
+    std::vector<PacketSource> packet_sources;
+    std::unordered_map<std::string, cereal::SchemaDescription> type_sources;
+
+    int i = 0;
+    for (auto &&meta_type : entt::resolve(meta_ctx) | std::views::values) {
+        std::println("{}: {}", ++i, meta_type.info().name());
+
         auto *descriptor = static_cast<cereal::internal::BasicSchema::TypeDescriptor *>(meta_type.custom());
         if (!descriptor || !descriptor->mPtr) {
             continue;
         }
 
-        auto name = std::string(meta_type.info().name());
-        if (auto sp = name.find(' '); sp != std::string::npos) {
-            name.erase(0, sp + 1);
-        }
+        auto name = stripTypePrefix(std::string(meta_type.info().name()));
+        descriptor->mName = name;
 
-        auto it = descriptor->mUserPropertiesMap.find("[cereal:packet]");
-        if (it != descriptor->mUserPropertiesMap.end()) {
-            int packet_id = entt::any_cast<int>(it->second.second);
+        const bool is_packet = descriptor->mUserPropertiesMap.contains("[cereal:packet]");
+        if (is_packet) {
+            int packet_id = entt::any_cast<int>(descriptor->mUserPropertiesMap["[cereal:packet]"].second);
+            std::println("[{}] {}", packet_id, name);
 
             cereal::internal::BasicSchema *payload_schema = nullptr;
             for (auto &&[func_id, func] : meta_type.func()) {
-                auto ret = func.ret();
-                auto *ret_desc = static_cast<cereal::internal::BasicSchema::TypeDescriptor *>(ret.custom());
-                if (ret_desc && ret_desc->mPtr) {
-                    payload_schema = ret_desc->mPtr.get();
+                if (func.arity() != 0) {
+                    continue;
+                }
+                auto return_type = func.ret();
+                if (return_type.info().name() != name + "Payload") {
+                    continue;
+                }
+                if (cereal::internal::BasicSchema::TypeDescriptor *pd = return_type.custom(); pd && pd->mPtr) {
+                    payload_schema = pd->mPtr.get();
                     break;
                 }
             }
-
             if (!payload_schema) {
-                std::println(stderr, "[{}] {} - no payload schema", packet_id, name);
+                std::println(stderr, "ERROR - [{}] {}: failed to find payload schema", packet_id, name);
                 continue;
             }
-
-            auto desc = payload_schema->description(ctx.internal(), config);
-            fixNames(desc, name_map);
-            std::println("[{}] {}", packet_id, name);
-            packet_entries.push_back({packet_id, std::move(name), std::move(desc)});
+            packet_sources.push_back({packet_id, name, payload_schema->description(ctx.internal(), config)});
         }
         else {
-            if (name.ends_with("Payload")) {
-                continue;
-            }
-
-            auto desc = descriptor->mPtr->description(ctx.internal(), config);
-            fixNames(desc, name_map);
-            type_entries.push_back({std::move(name), std::move(desc)});
+            type_sources.emplace(name, descriptor->mPtr->description(ctx.internal(), config));
         }
     }
 
-    std::println("{} / {} packets have cereal schemas", packet_entries.size(), packets.size());
-    std::println("{} types", type_entries.size());
-
-    SchemaGenerator gen;
-    gen.generate(packet_entries, type_entries, output_dir);
-    std::println("Done! Output: {}", output_dir.string());
-}
-
-static void signalDone()
-{
-    if (auto hEvent = OpenEventA(EVENT_MODIFY_STATE, FALSE, "proto_dumper_done")) {
-        SetEvent(hEvent);
-        CloseHandle(hEvent);
+    // Alias pre-pass: detect readAndWriteAs redirects. A cereal type T is an alias
+    // for U iff T's meta-type has a 0-arity func whose return type is a different
+    // named cereal type. Packets are gated on [cereal:packet] and are never aliases.
+    std::unordered_map<std::string, const cereal::SchemaDescription *> aliases;
+    for (auto &&meta_type : entt::resolve(meta_ctx) | std::views::values) {
+        auto from = stripTypePrefix(std::string(meta_type.info().name()));
+        if (!type_sources.contains(from)) {
+            continue;
+        }
+        for (auto &&[func_id, func] : meta_type.func()) {
+            if (func.arity() != 0) {
+                continue;
+            }
+            auto to = stripTypePrefix(std::string(func.ret().info().name()));
+            if (to == from) {
+                continue;
+            }
+            if (auto it = type_sources.find(to); it != type_sources.end()) {
+                aliases.emplace(from, &it->second);
+                break;
+            }
+        }
     }
+    // Collapse alias chains: a -> b -> c becomes a -> c.
+    for (auto &[from, target] : aliases) {
+        std::unordered_map<std::string, bool> seen;
+        while (target) {
+            auto target_name = target->mName.value_or("");
+            if (!seen.emplace(target_name, true).second) {
+                break;  // cycle guard
+            }
+            auto next = aliases.find(target_name);
+            if (next == aliases.end() || next->second == target) {
+                break;
+            }
+            target = next->second;
+        }
+    }
+
+    proto::Visitor visitor;
+    visitor.setAliases(std::move(aliases));
+
+    for (const auto &[name, desc] : type_sources) {
+        visitor.visitClass(name, desc);
+    }
+    for (const auto &src : packet_sources) {
+        visitor.visitPacket(src.id, src.name, src.desc);
+    }
+
+    proto::output::JsonWriter writer;
+    writer.write(visitor.packets(), visitor.classes(), output_dir);
+    std::println("Done! Output: {}", output_dir.string());
 }
 
 BOOL WINAPI DllMain(HINSTANCE hDll, DWORD reason, LPVOID)
@@ -179,12 +217,16 @@ BOOL WINAPI DllMain(HINSTANCE hDll, DWORD reason, LPVOID)
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hDll);
         try {
+            ListPackets();
             DumpSchemas();
         }
         catch (const std::exception &e) {
             std::println(stderr, "FATAL: {}", e.what());
         }
-        signalDone();
+        if (auto hEvent = OpenEventA(EVENT_MODIFY_STATE, FALSE, "proto_dumper_done")) {
+            SetEvent(hEvent);
+            CloseHandle(hEvent);
+        }
         return FALSE;
     }
     return TRUE;

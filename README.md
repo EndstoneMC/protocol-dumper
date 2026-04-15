@@ -206,13 +206,15 @@ Built with clang-cl + lld-link to stay ABI-compatible with BDS preview, which Mo
 
 ```bash
 # From a VS 2022 x64 Native Tools prompt (so clang-cl/lld-link and the MSVC STL are on PATH)
-cmake --preset clang-cl
-cmake --build --preset clang-cl
+cmake --preset clang-cl-release
+cmake --build --preset clang-cl-release
 ```
 
+Swap `clang-cl-release` for `clang-cl-relwithdebinfo` to get a build with debug info.
+
 Produces:
-- `build/proto_dumper.dll` -- the injected DLL
-- `build/injector.exe` -- the injector
+- `build/release/proto_dumper.dll` -- the injected DLL
+- `build/release/injector.exe` -- the injector
 
 ## Usage
 

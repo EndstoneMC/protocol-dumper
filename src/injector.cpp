@@ -96,6 +96,11 @@ int main(int argc, char *argv[])
         .scan<'i', int>()
         .help("seconds to wait for process (0 = wait forever)");
 
+    program.add_argument("--dll-timeout")
+        .default_value(5)
+        .scan<'i', int>()
+        .help("seconds to wait for the DLL to finish (0 = wait forever)");
+
     try {
         program.parse_args(argc, argv);
     }
@@ -152,9 +157,13 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    int dll_timeout = program.get<int>("--dll-timeout");
     std::println("Waiting for DLL to finish...");
     if (hEvent) {
-        WaitForSingleObject(hEvent, 60000);
+        DWORD wait_ms = dll_timeout > 0 ? static_cast<DWORD>(dll_timeout) * 1000 : INFINITE;
+        if (WaitForSingleObject(hEvent, wait_ms) == WAIT_TIMEOUT) {
+            std::println("Timed out waiting for DLL after {}s", dll_timeout);
+        }
         CloseHandle(hEvent);
     }
 
