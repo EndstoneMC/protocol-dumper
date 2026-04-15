@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <utility>
 
+#include "cereal/schema/BasicSchema.h"
+
 namespace proto {
 
 using cereal::SerializationTraits;
@@ -28,36 +30,55 @@ std::string resolveWire(ReflectedType type, SerializationTraits traits)
     const bool big_end = hasFlag(traits, SerializationTraits::BigEndian);
 
     switch (type) {
-    case ReflectedType::Bool:   return "bool";
-    case ReflectedType::String: return "string";
-    case ReflectedType::Float:  return "float_le";
-    case ReflectedType::Double: return "double_le";
+    case ReflectedType::Bool:
+        return "bool";
+    case ReflectedType::String:
+        return "string";
+    case ReflectedType::Float:
+        return "float_le";
+    case ReflectedType::Double:
+        return "double_le";
 
-    case ReflectedType::Int8:  return compress ? "zigzag32" : "int8";
-    case ReflectedType::Uint8: return compress ? "varint32" : "uint8";
+    case ReflectedType::Int8:
+        return compress ? "zigzag32" : "int8";
+    case ReflectedType::Uint8:
+        return compress ? "varint32" : "uint8";
 
     case ReflectedType::Int16:
-        if (compress) return "zigzag32";
+        if (compress) {
+            return "zigzag32";
+        }
         return big_end ? "int16_be" : "int16_le";
     case ReflectedType::Uint16:
-        if (compress) return "varint32";
+        if (compress) {
+            return "varint32";
+        }
         return big_end ? "uint16_be" : "uint16_le";
 
     case ReflectedType::Int32:
-        if (compress) return "zigzag32";
+        if (compress) {
+            return "zigzag32";
+        }
         return big_end ? "int32_be" : "int32_le";
     case ReflectedType::Uint32:
-        if (compress) return "varint32";
+        if (compress) {
+            return "varint32";
+        }
         return big_end ? "uint32_be" : "uint32_le";
 
     case ReflectedType::Int64:
-        if (compress) return "zigzag64";
+        if (compress) {
+            return "zigzag64";
+        }
         return big_end ? "int64_be" : "int64_le";
     case ReflectedType::Uint64:
-        if (compress) return "varint64";
+        if (compress) {
+            return "varint64";
+        }
         return big_end ? "uint64_be" : "uint64_le";
 
-    default: return "unknown";
+    default:
+        return "unknown";
     }
 }
 
@@ -131,10 +152,7 @@ private:
 
 }  // namespace
 
-Visitor::Visitor(const entt::meta_ctx &ctx, AliasMap aliases)
-    : mAliases(std::move(aliases)), mMetaCtx(ctx)
-{
-}
+Visitor::Visitor(const entt::meta_ctx &ctx, AliasMap aliases) : mAliases(std::move(aliases)), mMetaCtx(ctx) {}
 
 bool Visitor::isAlias(std::string_view name) const
 {
@@ -149,17 +167,28 @@ void Visitor::visit(const cereal::SchemaDescription &desc)
         return;
     }
     switch (rt) {
-    case ReflectedType::Enum:                 visitEnum(desc);   break;
-    case ReflectedType::Object:               visitObject(desc); break;
-    case ReflectedType::SequenceContainer:    visitArray(desc);  break;
-    case ReflectedType::AssociativeContainer: visitMap(desc);    break;
-    default:                                  break;
+    case ReflectedType::Enum:
+        visitEnum(desc);
+        break;
+    case ReflectedType::Object:
+        visitObject(desc);
+        break;
+    case ReflectedType::SequenceContainer:
+        visitArray(desc);
+        break;
+    case ReflectedType::AssociativeContainer:
+        visitMap(desc);
+        break;
+    default:
+        break;
     }
 }
 
 void Visitor::visitScalar(const cereal::SchemaDescription &desc)
 {
-    if (!mTypeSlot) return;
+    if (!mTypeSlot) {
+        return;
+    }
     auto ft = std::make_unique<model::ScalarFieldType>();
     ft->mWire = resolveWire(*desc.mType, getTraits(desc));
     *mTypeSlot = std::move(ft);
@@ -167,7 +196,9 @@ void Visitor::visitScalar(const cereal::SchemaDescription &desc)
 
 void Visitor::visitEnum(const cereal::SchemaDescription &desc)
 {
-    if (!mTypeSlot) return;
+    if (!mTypeSlot) {
+        return;
+    }
     const auto traits = getTraits(desc);
     const bool as_value = hasFlag(traits, SerializationTraits::EnumAsValue);
     auto ft = std::make_unique<model::EnumFieldType>();
@@ -185,7 +216,9 @@ void Visitor::visitEnum(const cereal::SchemaDescription &desc)
 
 void Visitor::visitObject(const cereal::SchemaDescription &desc)
 {
-    if (!mTypeSlot) return;
+    if (!mTypeSlot) {
+        return;
+    }
     const auto &name = desc.mName.value_or("");
     if (auto it = mAliases.find(std::string_view{name}); it != mAliases.end() && it->second) {
         visit(*it->second);
@@ -198,7 +231,9 @@ void Visitor::visitObject(const cereal::SchemaDescription &desc)
 
 void Visitor::visitArray(const cereal::SchemaDescription &desc)
 {
-    if (!mTypeSlot) return;
+    if (!mTypeSlot) {
+        return;
+    }
     auto ft = std::make_unique<model::ArrayFieldType>();
     ft->mLengthWire = lengthWire(getTraits(desc));
     auto *raw = ft.get();
@@ -211,7 +246,9 @@ void Visitor::visitArray(const cereal::SchemaDescription &desc)
 
 void Visitor::visitMap(const cereal::SchemaDescription &desc)
 {
-    if (!mTypeSlot) return;
+    if (!mTypeSlot) {
+        return;
+    }
     auto ft = std::make_unique<model::MapFieldType>();
     ft->mLengthWire = lengthWire(getTraits(desc));
     auto *raw = ft.get();
@@ -244,6 +281,7 @@ void Visitor::visitField(const std::string &name, const Member &member)
 
     target->mName = name;
     target->mRequired = true;
+    target->mDeprecated = member.mDeprecated;
     entt::meta_type declaredType;
     if (mCurrentMetaType) {
         const auto id = entt::hashed_string::value(name.c_str(), name.size());
@@ -255,9 +293,11 @@ void Visitor::visitField(const std::string &name, const Member &member)
                     declaredType = declaredType.template_arg(0);
                 }
             }
+            if (cereal::internal::BasicSchema::MemberDescriptor *mdesc = md.custom()) {
+                target->mDeprecated = mdesc->mIsDeprecatedComponent;
+            }
         }
     }
-    target->mDeprecated = member.mDeprecated;
     if (member.mDescription) {
         target->mDescription = *member.mDescription;
     }
@@ -274,8 +314,7 @@ void Visitor::visitField(const std::string &name, const Member &member)
     }
 
     if (declaredType) {
-        if (auto *obj = dynamic_cast<model::ObjectFieldType *>(target->mType.get());
-            obj && obj->mTypeName.empty()) {
+        if (auto *obj = dynamic_cast<model::ObjectFieldType *>(target->mType.get()); obj && obj->mTypeName.empty()) {
             obj->mTypeName = std::string{stripTypePrefix(declaredType.info().name())};
         }
     }
@@ -283,10 +322,11 @@ void Visitor::visitField(const std::string &name, const Member &member)
 
 void Visitor::visitStructFields(const cereal::SchemaDescription &desc)
 {
-    if (!desc.mMembers) return;
+    if (!desc.mMembers) {
+        return;
+    }
 
-    entt::meta_type parent =
-        desc.mId ? entt::resolve(mMetaCtx, desc.mId) : entt::meta_type{};
+    entt::meta_type parent = desc.mId ? entt::resolve(mMetaCtx, desc.mId) : entt::meta_type{};
     ScopedAssign metaGuard{mCurrentMetaType, std::move(parent)};
 
     struct Entry {
@@ -299,8 +339,7 @@ void Visitor::visitStructFields(const cereal::SchemaDescription &desc)
     for (const auto &[n, m] : *desc.mMembers) {
         entries.push_back({&n, &m, m.mOrdinalIndex.value_or(255)});
     }
-    std::sort(entries.begin(), entries.end(),
-              [](const Entry &a, const Entry &b) { return a.ordinal < b.ordinal; });
+    std::sort(entries.begin(), entries.end(), [](const Entry &a, const Entry &b) { return a.ordinal < b.ordinal; });
 
     for (const auto &e : entries) {
         visitField(*e.name, *e.member);
@@ -309,7 +348,9 @@ void Visitor::visitStructFields(const cereal::SchemaDescription &desc)
 
 void Visitor::visitClass(const std::string &name, const cereal::SchemaDescription &desc)
 {
-    if (isAlias(name)) return;
+    if (isAlias(name)) {
+        return;
+    }
 
     auto cls = std::make_unique<model::Class>();
     cls->mName = name;
