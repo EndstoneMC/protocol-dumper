@@ -40,40 +40,40 @@ std::string resolveWire(ReflectedType type, SerializationTraits traits)
         return "double_le";
 
     case ReflectedType::Int8:
-        return compress ? "zigzag32" : "int8";
+        return compress ? "varint32" : "int8";
     case ReflectedType::Uint8:
-        return compress ? "varint32" : "uint8";
+        return compress ? "uvarint32" : "uint8";
 
     case ReflectedType::Int16:
         if (compress) {
-            return "zigzag32";
+            return "varint32";
         }
         return big_end ? "int16_be" : "int16_le";
     case ReflectedType::Uint16:
         if (compress) {
-            return "varint32";
+            return "uvarint32";
         }
         return big_end ? "uint16_be" : "uint16_le";
 
     case ReflectedType::Int32:
         if (compress) {
-            return "zigzag32";
+            return "varint32";
         }
         return big_end ? "int32_be" : "int32_le";
     case ReflectedType::Uint32:
         if (compress) {
-            return "varint32";
+            return "uvarint32";
         }
         return big_end ? "uint32_be" : "uint32_le";
 
     case ReflectedType::Int64:
         if (compress) {
-            return "zigzag64";
+            return "varint64";
         }
         return big_end ? "int64_be" : "int64_le";
     case ReflectedType::Uint64:
         if (compress) {
-            return "varint64";
+            return "uvarint64";
         }
         return big_end ? "uint64_be" : "uint64_le";
 
@@ -84,7 +84,7 @@ std::string resolveWire(ReflectedType type, SerializationTraits traits)
 
 std::string lengthWire(SerializationTraits traits)
 {
-    return hasFlag(traits, SerializationTraits::NoSizeCompression) ? "uint32_le" : "varint32";
+    return hasFlag(traits, SerializationTraits::NoSizeCompression) ? "uint32_le" : "uvarint32";
 }
 
 model::Constraints buildConstraints(const ConstraintDescription &c)
