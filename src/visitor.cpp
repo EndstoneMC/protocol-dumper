@@ -79,14 +79,20 @@ model::Constraints buildConstraints(const ConstraintDescription &c)
     return out;
 }
 
+std::string_view stripTypePrefix(std::string_view name)
+{
+    for (auto p : {"struct ", "class ", "enum ", "union "}) {
+        if (name.starts_with(p)) {
+            name.remove_prefix(std::string_view{p}.size());
+            break;
+        }
+    }
+    return name;
+}
+
 bool isOptional(const entt::meta_type &t)
 {
-    if (!t) return false;
-    std::string_view name = t.info().name();
-    for (auto p : {"struct ", "class "}) {
-        if (name.starts_with(p)) name.remove_prefix(std::string_view{p}.size());
-    }
-    return name.starts_with("std::optional<");
+    return t && stripTypePrefix(t.info().name()).starts_with("std::optional<");
 }
 
 bool isScalarRT(ReflectedType rt)
@@ -238,10 +244,17 @@ void Visitor::visitField(const std::string &name, const Member &member)
 
     target->mName = name;
     target->mRequired = true;
+    entt::meta_type declaredType;
     if (mCurrentMetaType) {
         const auto id = entt::hashed_string::value(name.c_str(), name.size());
         if (auto md = mCurrentMetaType.data(id)) {
-            target->mRequired = !isOptional(md.type());
+            declaredType = md.type();
+            if (isOptional(declaredType)) {
+                target->mRequired = false;
+                if (declaredType.template_arity() > 0) {
+                    declaredType = declaredType.template_arg(0);
+                }
+            }
         }
     }
     target->mDeprecated = member.mDeprecated;
@@ -255,8 +268,17 @@ void Visitor::visitField(const std::string &name, const Member &member)
         }
     }
 
-    ScopedAssign slotGuard{mTypeSlot, &target->mType};
-    visit(member);
+    {
+        ScopedAssign slotGuard{mTypeSlot, &target->mType};
+        visit(member);
+    }
+
+    if (declaredType) {
+        if (auto *obj = dynamic_cast<model::ObjectFieldType *>(target->mType.get());
+            obj && obj->mTypeName.empty()) {
+            obj->mTypeName = std::string{stripTypePrefix(declaredType.info().name())};
+        }
+    }
 }
 
 void Visitor::visitStructFields(const cereal::SchemaDescription &desc)
