@@ -16,23 +16,32 @@
 #include "json_writer.h"
 #include "visitor.h"
 
-// Strip MSVC RTTI prefixes like "struct ", "class ", "enum ", "union " from a type name.
-// Handles combined forms such as "enum class Foo::Bar".
-static std::string stripTypePrefix(std::string name)
+// Handles combined forms such as "enum class Foo::Bar" by stripping repeatedly.
+static std::string_view stripTypePrefix(std::string_view name)
 {
     constexpr std::string_view kPrefixes[] = {"struct ", "class ", "enum ", "union "};
-    bool changed = true;
-    while (changed) {
+    for (bool changed = true; changed;) {
         changed = false;
         for (auto p : kPrefixes) {
             if (name.starts_with(p)) {
-                name.erase(0, p.size());
+                name.remove_prefix(p.size());
                 changed = true;
                 break;
             }
         }
     }
     return name;
+}
+
+static std::string qualifiedName(const entt::meta_type &t)
+{
+    return std::string{stripTypePrefix(t.info().name())};
+}
+
+static cereal::internal::BasicSchema *getSchema(const entt::meta_type &t)
+{
+    auto *d = static_cast<cereal::internal::BasicSchema::TypeDescriptor *>(t.custom());
+    return (d && d->mPtr) ? d->mPtr.get() : nullptr;
 }
 
 static void ListPackets()
@@ -69,7 +78,6 @@ static void DumpSchemas()
 
     std::println("=== BDS Packet Schema Dump ===");
 
-    // --- Enumerate packets ---
     std::vector<std::shared_ptr<Packet>> packets;
     for (int id = 1; id < 500; id++) {
         try {
@@ -89,7 +97,6 @@ static void DumpSchemas()
     }
     std::println("Found {} packets", packets.size());
 
-    // --- Extract schemas ---
     auto server = ServiceLocator<ServerInstance>::get();
     auto &network = static_cast<NetworkSystem &>(server->getNetwork());
     auto &ctx = network.getPacketReflectionCtx();
@@ -125,27 +132,20 @@ static void DumpSchemas()
             continue;
         }
 
-        auto name = stripTypePrefix(std::string(meta_type.info().name()));
+        auto name = qualifiedName(meta_type);
         descriptor->mName = name;
 
-        const bool is_packet = descriptor->mUserPropertiesMap.contains("[cereal:packet]");
-        if (is_packet) {
+        if (descriptor->mUserPropertiesMap.contains("[cereal:packet]")) {
             int packet_id = entt::any_cast<int>(descriptor->mUserPropertiesMap["[cereal:packet]"].second);
             std::println("[{}] {}", packet_id, name);
 
             cereal::internal::BasicSchema *payload_schema = nullptr;
             for (auto &&[func_id, func] : meta_type.func()) {
-                if (func.arity() != 0) {
-                    continue;
-                }
+                if (func.arity() != 0) continue;
                 auto return_type = func.ret();
-                if (return_type.info().name() != name + "Payload") {
-                    continue;
-                }
-                if (cereal::internal::BasicSchema::TypeDescriptor *pd = return_type.custom(); pd && pd->mPtr) {
-                    payload_schema = pd->mPtr.get();
-                    break;
-                }
+                if (qualifiedName(return_type) != name + "Payload") continue;
+                payload_schema = getSchema(return_type);
+                if (payload_schema) break;
             }
             if (!payload_schema) {
                 std::println(stderr, "ERROR - [{}] {}: failed to find payload schema", packet_id, name);
@@ -161,20 +161,14 @@ static void DumpSchemas()
     // Alias pre-pass: detect readAndWriteAs redirects. A cereal type T is an alias
     // for U iff T's meta-type has a 0-arity func whose return type is a different
     // named cereal type. Packets are gated on [cereal:packet] and are never aliases.
-    std::unordered_map<std::string, const cereal::SchemaDescription *> aliases;
+    proto::Visitor::AliasMap aliases;
     for (auto &&meta_type : entt::resolve(meta_ctx) | std::views::values) {
-        auto from = stripTypePrefix(std::string(meta_type.info().name()));
-        if (!type_sources.contains(from)) {
-            continue;
-        }
+        auto from = qualifiedName(meta_type);
+        if (!type_sources.contains(from)) continue;
         for (auto &&[func_id, func] : meta_type.func()) {
-            if (func.arity() != 0) {
-                continue;
-            }
-            auto to = stripTypePrefix(std::string(func.ret().info().name()));
-            if (to == from) {
-                continue;
-            }
+            if (func.arity() != 0) continue;
+            auto to = qualifiedName(func.ret());
+            if (to == from) continue;
             if (auto it = type_sources.find(to); it != type_sources.end()) {
                 aliases.emplace(from, &it->second);
                 break;
@@ -197,8 +191,7 @@ static void DumpSchemas()
         }
     }
 
-    proto::Visitor visitor;
-    visitor.setAliases(std::move(aliases));
+    proto::Visitor visitor{meta_ctx, std::move(aliases)};
 
     for (const auto &[name, desc] : type_sources) {
         visitor.visitClass(name, desc);

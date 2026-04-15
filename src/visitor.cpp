@@ -79,6 +79,16 @@ model::Constraints buildConstraints(const ConstraintDescription &c)
     return out;
 }
 
+bool isOptional(const entt::meta_type &t)
+{
+    if (!t) return false;
+    std::string_view name = t.info().name();
+    for (auto p : {"struct ", "class "}) {
+        if (name.starts_with(p)) name.remove_prefix(std::string_view{p}.size());
+    }
+    return name.starts_with("std::optional<");
+}
+
 bool isScalarRT(ReflectedType rt)
 {
     switch (rt) {
@@ -101,28 +111,28 @@ bool isScalarRT(ReflectedType rt)
 }
 
 template <typename T>
-class ScopedCursor {
+class ScopedAssign {
 public:
-    ScopedCursor(T *&slot, T *value) : mSlot(slot), mSaved(slot) { slot = value; }
-    ~ScopedCursor() { mSlot = mSaved; }
-    ScopedCursor(const ScopedCursor &) = delete;
-    ScopedCursor &operator=(const ScopedCursor &) = delete;
+    ScopedAssign(T &slot, T value) : mSlot(slot), mSaved(std::exchange(slot, std::move(value))) {}
+    ~ScopedAssign() { mSlot = std::move(mSaved); }
+    ScopedAssign(const ScopedAssign &) = delete;
+    ScopedAssign &operator=(const ScopedAssign &) = delete;
 
 private:
-    T *&mSlot;
-    T *mSaved;
+    T &mSlot;
+    T mSaved;
 };
 
 }  // namespace
 
-void Visitor::setAliases(std::unordered_map<std::string, const cereal::SchemaDescription *> aliases)
+Visitor::Visitor(const entt::meta_ctx &ctx, AliasMap aliases)
+    : mAliases(std::move(aliases)), mMetaCtx(ctx)
 {
-    mAliases = std::move(aliases);
 }
 
 bool Visitor::isAlias(std::string_view name) const
 {
-    return mAliases.find(std::string(name)) != mAliases.end();
+    return mAliases.find(name) != mAliases.end();
 }
 
 void Visitor::visit(const cereal::SchemaDescription &desc)
@@ -170,8 +180,8 @@ void Visitor::visitEnum(const cereal::SchemaDescription &desc)
 void Visitor::visitObject(const cereal::SchemaDescription &desc)
 {
     if (!mTypeSlot) return;
-    const auto name = desc.mName.value_or("");
-    if (auto it = mAliases.find(name); it != mAliases.end() && it->second) {
+    const auto &name = desc.mName.value_or("");
+    if (auto it = mAliases.find(std::string_view{name}); it != mAliases.end() && it->second) {
         visit(*it->second);
         return;
     }
@@ -188,7 +198,7 @@ void Visitor::visitArray(const cereal::SchemaDescription &desc)
     auto *raw = ft.get();
     *mTypeSlot = std::move(ft);
     if (desc.mValueType) {
-        ScopedCursor<std::unique_ptr<model::FieldType>> guard{mTypeSlot, &raw->mElement};
+        ScopedAssign slotGuard{mTypeSlot, &raw->mElement};
         visit(*desc.mValueType);
     }
 }
@@ -201,11 +211,11 @@ void Visitor::visitMap(const cereal::SchemaDescription &desc)
     auto *raw = ft.get();
     *mTypeSlot = std::move(ft);
     if (desc.mKeyType) {
-        ScopedCursor<std::unique_ptr<model::FieldType>> guard{mTypeSlot, &raw->mKey};
+        ScopedAssign slotGuard{mTypeSlot, &raw->mKey};
         visit(*desc.mKeyType);
     }
     if (desc.mMappedType) {
-        ScopedCursor<std::unique_ptr<model::FieldType>> guard{mTypeSlot, &raw->mValue};
+        ScopedAssign slotGuard{mTypeSlot, &raw->mValue};
         visit(*desc.mMappedType);
     }
 }
@@ -227,7 +237,13 @@ void Visitor::visitField(const std::string &name, const Member &member)
     }
 
     target->mName = name;
-    target->mRequired = member.mRequired;
+    target->mRequired = true;
+    if (mCurrentMetaType) {
+        const auto id = entt::hashed_string::value(name.c_str(), name.size());
+        if (auto md = mCurrentMetaType.data(id)) {
+            target->mRequired = !isOptional(md.type());
+        }
+    }
     target->mDeprecated = member.mDeprecated;
     if (member.mDescription) {
         target->mDescription = *member.mDescription;
@@ -239,13 +255,17 @@ void Visitor::visitField(const std::string &name, const Member &member)
         }
     }
 
-    ScopedCursor<std::unique_ptr<model::FieldType>> guard{mTypeSlot, &target->mType};
+    ScopedAssign slotGuard{mTypeSlot, &target->mType};
     visit(member);
 }
 
 void Visitor::visitStructFields(const cereal::SchemaDescription &desc)
 {
     if (!desc.mMembers) return;
+
+    entt::meta_type parent =
+        desc.mId ? entt::resolve(mMetaCtx, desc.mId) : entt::meta_type{};
+    ScopedAssign metaGuard{mCurrentMetaType, std::move(parent)};
 
     struct Entry {
         const std::string *name;
@@ -291,7 +311,7 @@ void Visitor::visitClass(const std::string &name, const cereal::SchemaDescriptio
     auto *raw = cls.get();
     mClasses.push_back(std::move(cls));
 
-    ScopedCursor<model::Class> guard{mCurrentClass, raw};
+    ScopedAssign classGuard{mCurrentClass, raw};
     visitStructFields(desc);
 }
 
@@ -302,7 +322,7 @@ void Visitor::visitPacket(int id, const std::string &name, const cereal::SchemaD
     pkt.mName = name;
     mPackets.push_back(std::move(pkt));
 
-    ScopedCursor<model::Packet> guard{mCurrentPacket, &mPackets.back()};
+    ScopedAssign packetGuard{mCurrentPacket, &mPackets.back()};
     visitStructFields(desc);
 }
 

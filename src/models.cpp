@@ -65,9 +65,7 @@ Json Field::toJson() const
     Json j = Json::object();
     j["name"] = mName;
     if (mType) {
-        for (auto &[k, v] : mType->toJson().items()) {
-            j[k] = v;
-        }
+        j.update(mType->toJson());
     }
     if (!mRequired) {
         j["optional"] = true;
