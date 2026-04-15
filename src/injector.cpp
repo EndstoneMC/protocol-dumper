@@ -96,11 +96,6 @@ int main(int argc, char *argv[])
         .scan<'i', int>()
         .help("seconds to wait for process (0 = wait forever)");
 
-    program.add_argument("--preview")
-        .default_value(false)
-        .implicit_value(true)
-        .help("target a BDS preview build");
-
     try {
         program.parse_args(argc, argv);
     }
@@ -112,7 +107,6 @@ int main(int argc, char *argv[])
 
     auto process_name = program.get<std::string>("--process");
     std::wstring wprocess_name(process_name.begin(), process_name.end());
-    bool preview = program.get<bool>("--preview");
 
     std::filesystem::path dll_path;
     auto dll_arg = program.get<std::string>("--dll");
@@ -148,25 +142,13 @@ int main(int argc, char *argv[])
 
     std::println("Found {} (PID {})", process_name, pid);
 
-    // Set up shared memory with config for the DLL
-    const char *build = preview ? "preview" : "release";
-    HANDLE hMap = CreateFileMappingA(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, 4096, "proto_dumper_config");
-    if (hMap) {
-        if (auto *ptr = static_cast<char *>(MapViewOfFile(hMap, FILE_MAP_WRITE, 0, 0, 4096))) {
-            memcpy(ptr, build, strlen(build) + 1);
-            UnmapViewOfFile(ptr);
-        }
-    }
-
-    // Create event the DLL will signal when done
     HANDLE hEvent = CreateEventA(nullptr, TRUE, FALSE, "proto_dumper_done");
 
-    std::println("Injecting {} ({})...", dll_path.filename().string(), build);
+    std::println("Injecting {}...", dll_path.filename().string());
 
     if (!inject(pid, dll_path)) {
         std::println("Injection failed");
         if (hEvent) CloseHandle(hEvent);
-        if (hMap) CloseHandle(hMap);
         return 1;
     }
 
@@ -175,7 +157,6 @@ int main(int argc, char *argv[])
         WaitForSingleObject(hEvent, 60000);
         CloseHandle(hEvent);
     }
-    if (hMap) CloseHandle(hMap);
 
     std::println("Done.");
     return 0;

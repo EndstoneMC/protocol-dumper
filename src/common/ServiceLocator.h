@@ -44,17 +44,11 @@ template <>
 inline ServiceReference<ServerInstance> ServiceLocator<ServerInstance>::get()
 {
     static auto addr = []() -> std::byte * {
-        hat::scan_result result;
-        if (g_bds_preview) {
-            result = hat::find_pattern(hat::compile_signature<"E8 ? ? ? ? 90 4C 8B 6D ? 4D 85 ED 0F 84">(), ".text");
-        }
-        else {
-            result = hat::find_pattern(hat::compile_signature<"E8 ? ? ? ? 90 4C 8B 6D ? 4D 85 ED 0F 84">(), ".text");
-        }
+        auto result = hat::find_pattern(hat::compile_signature<"E8 ? ? ? ? 48 8B 45 ? 48 85 C0 74 ? ? ? ? 84 DB">(), ".text");
         if (!result.has_result()) {
             throw std::runtime_error("Sigscan failed: ServiceLocator<ServerInstance>::get()");
         }
         return result.rel(1);
     }();
-    return BEDROCK_CALL(addr, &ServiceLocator::get);
+    return CALL_FUNCTION(addr, &ServiceLocator::get);
 }

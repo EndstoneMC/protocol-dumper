@@ -48,18 +48,6 @@ static void fixNames(cereal::SchemaDescription &desc, const std::map<std::string
 
 static void DumpSchemas()
 {
-    // Read config from injector via named shared memory
-    if (auto hMap = OpenFileMappingA(FILE_MAP_READ, FALSE, "proto_dumper_config")) {
-        if (auto *ptr = static_cast<const char *>(MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0))) {
-            g_bds_preview = (std::string_view(ptr) == "preview");
-            UnmapViewOfFile(ptr);
-        }
-        CloseHandle(hMap);
-    }
-    if (g_bds_preview) {
-        std::println("Build: preview");
-    }
-
     wchar_t exe_path[MAX_PATH];
     GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
     auto exe_dir = std::filesystem::path(exe_path).parent_path();
@@ -199,4 +187,5 @@ BOOL WINAPI DllMain(HINSTANCE hDll, DWORD reason, LPVOID)
         signalDone();
         return FALSE;
     }
+    return TRUE;
 }

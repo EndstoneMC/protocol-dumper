@@ -1,7 +1,5 @@
 #pragma once
 
-inline bool g_bds_preview = false;
-
 template <typename Return, typename... Args>
 Return (*fp_cast(Return (*)(Args...), void *addr))(Args...)
 {
@@ -28,6 +26,5 @@ Return (Class::*fp_cast(Return (Class::*)(Args...) const, void *addr))(Args...) 
     return *reinterpret_cast<Return (Class::**)(Args...) const>(&temp);
 }
 
-// --- BEDROCK_CALL: invoke a BDS function by its cached decorated name ---
 
-#define BEDROCK_CALL(addr, fp, ...) std::invoke(fp_cast(fp, addr), ##__VA_ARGS__)
+#define CALL_FUNCTION(addr, fp, ...) std::invoke(fp_cast(fp, addr), ##__VA_ARGS__)
