@@ -67,7 +67,7 @@ static void DumpSchemas()
             }
             packets.push_back(pk);
             if (pk->getSerializationMode() == SerializationMode::ManualOnly) {
-                std::println(stderr, "[{}] {} (ManualOnly)", static_cast<int>(pk->getId()), pk->getName());
+                std::println(stderr, "[{}] {} has manual only serialization mode.", static_cast<int>(pk->getId()), pk->getName());
             }
         }
         catch (...) {

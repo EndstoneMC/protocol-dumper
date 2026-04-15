@@ -202,14 +202,17 @@ Proto field numbers don't exist in cereal. Fields are serialized **in registrati
 
 ## Building
 
+Built with clang-cl + lld-link to stay ABI-compatible with BDS preview, which Mojang now ships built the same way.
+
 ```bash
-cmake -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Release
+# From a VS 2022 x64 Native Tools prompt (so clang-cl/lld-link and the MSVC STL are on PATH)
+cmake --preset clang-cl
+cmake --build --preset clang-cl
 ```
 
 Produces:
-- `build/Release/proto_dumper.dll` -- the injected DLL
-- `build/Release/injector.exe` -- the injector
+- `build/proto_dumper.dll` -- the injected DLL
+- `build/injector.exe` -- the injector
 
 ## Usage
 
