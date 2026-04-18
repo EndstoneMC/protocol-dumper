@@ -111,6 +111,35 @@ std::string_view stripTypePrefix(std::string_view name)
     return name;
 }
 
+std::string stripAnonymousNamespace(std::string name)
+{
+    constexpr std::string_view kAnon = "(anonymous namespace)::";
+    for (std::string::size_type pos; (pos = name.find(kAnon)) != std::string::npos;) {
+        name.erase(pos, kAnon.size());
+    }
+    return name;
+}
+
+// Maps C++ type names from variant template arguments to wire type names.
+// Returns empty string if the name is a user-defined type (not a primitive).
+std::string_view cppTypeToWire(std::string_view name)
+{
+    if (name == "cereal::NullType" || name == "cereal::internal::NullType") return "null";
+    if (name == "bool") return "bool";
+    if (name == "int" || name == "int32_t") return "int32_le";
+    if (name == "unsigned int" || name == "uint32_t") return "uint32_le";
+    if (name == "float") return "float_le";
+    if (name == "double") return "double_le";
+    if (name == "std::basic_string<char>" || name == "std::string") return "string";
+    if (name == "int8_t" || name == "signed char") return "int8";
+    if (name == "uint8_t" || name == "unsigned char") return "uint8";
+    if (name == "int16_t" || name == "short") return "int16_le";
+    if (name == "uint16_t" || name == "unsigned short") return "uint16_le";
+    if (name == "int64_t" || name == "__int64") return "int64_le";
+    if (name == "uint64_t" || name == "unsigned __int64") return "uint64_le";
+    return {};
+}
+
 bool isOptional(const entt::meta_type &t)
 {
     return t && stripTypePrefix(t.info().name()).starts_with("std::optional<");
@@ -173,7 +202,7 @@ std::unique_ptr<model::FieldType> Visitor::buildVariant(const entt::meta_type &v
         vt->mTag.mName = tvd->mTaggedName;
         if (tvd->mResolve) {
             if (auto tagType = tvd->mResolve(mMetaCtx)) {
-                vt->mTag.mTypeName = std::string{stripTypePrefix(tagType.info().name())};
+                vt->mTag.mTypeName = stripAnonymousNamespace(std::string{stripTypePrefix(tagType.info().name())});
             }
         }
     }
@@ -185,7 +214,13 @@ std::unique_ptr<model::FieldType> Visitor::buildVariant(const entt::meta_type &v
         if (!alt) {
             continue;
         }
-        vt->mOf.emplace_back(stripTypePrefix(alt.info().name()));
+        auto name = stripTypePrefix(alt.info().name());
+        if (auto wire = cppTypeToWire(name); !wire.empty()) {
+            vt->mOf.emplace_back(wire);
+        }
+        else {
+            vt->mOf.emplace_back(stripAnonymousNamespace(std::string{name}));
+        }
     }
     return vt;
 }
@@ -261,7 +296,7 @@ void Visitor::visitObject(const cereal::SchemaDescription &desc)
         return;
     }
     auto ft = std::make_unique<model::ObjectFieldType>();
-    ft->mTypeName = name;
+    ft->mTypeName = stripAnonymousNamespace(name);
     *mTypeSlot = std::move(ft);
 }
 
@@ -356,7 +391,7 @@ void Visitor::visitField(const std::string &name, const Member &member)
 
     if (declaredType) {
         if (auto *obj = dynamic_cast<model::ObjectFieldType *>(target->mType.get()); obj && obj->mTypeName.empty()) {
-            obj->mTypeName = std::string{stripTypePrefix(declaredType.info().name())};
+            obj->mTypeName = stripAnonymousNamespace(std::string{stripTypePrefix(declaredType.info().name())});
         }
     }
 }

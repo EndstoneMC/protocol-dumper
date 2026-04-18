@@ -22,55 +22,39 @@ Json Constraints::toJson() const
 
 Json ScalarFieldType::toJson() const
 {
-    return Json{{"type", mWire}};
+    return Json(mWire);
 }
 
 Json EnumFieldType::toJson() const
 {
-    return Json{{"enum", mTypeName}, {"type", mWire}};
+    return Json(mWire);
 }
 
 Json ObjectFieldType::toJson() const
 {
-    return Json{{"type", mTypeName}};
+    return Json(mTypeName);
 }
 
 Json ArrayFieldType::toJson() const
 {
-    Json j = Json::object();
-    j["type"] = "array";
-    j["prefix"] = mLengthWire;
-    if (mElement) {
-        j["element"] = mElement->toJson();
-    }
-    return j;
+    return mElement ? mElement->toJson() : Json();
 }
 
 Json MapFieldType::toJson() const
 {
     Json j = Json::object();
-    j["type"] = "map";
-    j["prefix"] = mLengthWire;
-    if (mKey) {
-        j["key"] = mKey->toJson();
-    }
-    if (mValue) {
-        j["value"] = mValue->toJson();
-    }
+    if (mKey) j["key"] = mKey->toJson();
+    if (mValue) j["value"] = mValue->toJson();
     return j;
 }
 
 Json VariantFieldType::toJson() const
 {
     Json j = Json::object();
-    j["type"] = "variant";
-    if (!mTag.mName.empty() || !mTag.mTypeName.empty()) {
-        Json tag = Json::object();
-        if (!mTag.mName.empty()) tag["name"] = mTag.mName;
-        if (!mTag.mTypeName.empty()) tag["type"] = mTag.mTypeName;
-        j["tag"] = std::move(tag);
+    if (!mTag.mName.empty()) {
+        j["switch-on"] = mTag.mName;
     }
-    j["values"] = mOf;
+    j["cases"] = mOf;
     return j;
 }
 
@@ -79,7 +63,13 @@ Json Field::toJson() const
     Json j = Json::object();
     j["name"] = mName;
     if (mType) {
-        j.update(mType->toJson());
+        j["type"] = mType->toJson();
+        if (auto e = mType->enumName(); !e.empty()) {
+            j["enum"] = std::move(e);
+        }
+        if (auto r = mType->repeat(); !r.empty()) {
+            j["repeat"] = std::move(r);
+        }
     }
     if (!mRequired) {
         j["optional"] = true;
@@ -120,6 +110,7 @@ Json Class::toJson() const
         j["values"] = std::move(values);
     }
     else {
+        j["kind"] = "struct";
         Json fields = Json::array();
         for (const auto &m : mMembers) {
             if (m) fields.push_back(m->toJson());

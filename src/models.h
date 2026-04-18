@@ -29,6 +29,8 @@ class FieldType {
 public:
     virtual ~FieldType() = default;
     virtual Json toJson() const = 0;
+    virtual std::string enumName() const { return {}; }
+    virtual std::string repeat() const { return {}; }
 };
 
 class ScalarFieldType final : public FieldType {
@@ -42,6 +44,7 @@ public:
     std::string mTypeName;
     std::string mWire;
     Json toJson() const override;
+    std::string enumName() const override { return mTypeName; }
 };
 
 class ObjectFieldType final : public FieldType {
@@ -55,6 +58,8 @@ public:
     std::string mLengthWire;
     std::unique_ptr<FieldType> mElement;
     Json toJson() const override;
+    std::string enumName() const override { return mElement ? mElement->enumName() : std::string{}; }
+    std::string repeat() const override { return mLengthWire; }
 };
 
 class MapFieldType final : public FieldType {
@@ -63,6 +68,7 @@ public:
     std::unique_ptr<FieldType> mKey;
     std::unique_ptr<FieldType> mValue;
     Json toJson() const override;
+    std::string repeat() const override { return mLengthWire; }
 };
 
 class VariantFieldType final : public FieldType {
