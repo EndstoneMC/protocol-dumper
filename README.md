@@ -1,67 +1,166 @@
 # proto-dumper
 
-Extracts packet schemas from a running Bedrock Dedicated Server (BDS) via cereal reflection and generates Protocol Buffer (`.proto`) definitions.
+Extracts packet schemas from a running Bedrock Dedicated Server (BDS) via cereal reflection and generates JSON schema definitions.
 
 ## How It Works
 
 BDS uses an in-house serialization library called **cereal** (not to be confused with the open-source cereal library) built on top of [EnTT](https://github.com/skypjack/entt)'s meta reflection system. Every packet payload type is registered with cereal at startup, creating a complete type graph with field names, types, constraints, enum values, and more.
 
-This tool injects a DLL into the BDS process, taps into that reflection data, and converts it to `.proto` files.
+This tool injects a DLL into the BDS process, walks that reflection data via `entt::resolve()`, and converts it to JSON schema files.
 
 ### Architecture
 
-```
-┌─────────────────────────────────┐
-│  Type Registration              │  cerealizer<T>::bind() -> entt meta_ctx
-├─────────────────────────────────┤
-│  Schema Layer                   │  BasicSchema -> CompositeSchema/TypeSchema
-│  (knows how to traverse types)  │  SchemaReader / SchemaWriter (abstract I/O)
-├─────────────────────────────────┤
-│  Format Layer                   │  BinarySchemaReader/Writer (BinaryStream)
-│  (knows the wire format)        │  Could also be JSON, etc.
-└─────────────────────────────────┘
+```mermaid
+---
+config:
+  layout: elk
+---
+graph TD
+    subgraph BDS["BDS Process"]
+        SL["ServiceLocator&lt;ServerInstance&gt;"] --> NS["NetworkSystem"]
+        NS --> RC["ReflectionCtx"]
+        RC --> MC["entt::meta_ctx\n(all registered types,\npacket ID mapping)"]
+    end
+
+    MC -->|"entt::resolve()"| V["Visitor\nSchemaDescription tree -> models\n(wire types, enums, variants, maps, arrays)"]
+    V --> JW["JSON Writer\nmodels -> per-file JSON"]
+    JW --> PD["packets/*.json"]
+    JW --> TD["types/*.json"]
 ```
 
 ### Pipeline
 
+```mermaid
+---
+config:
+  layout: elk
+---
+graph TD
+    BDS["bedrock_server.exe\n(running)"]
+    INJ["injector.exe"]
+
+    INJ -->|"DLL injection"| DLL["DllMain"]
+
+    DLL --> LP["ListPackets()\ncreatePacket(1..1023)\nreport ManualOnly to stderr"]
+    DLL --> DS["DumpSchemas()"]
+
+    DS --> SL["ServiceLocator&lt;ServerInstance&gt;::get()\n-> NetworkSystem -> ReflectionCtx"]
+    SL --> ER["entt::resolve(meta_ctx)\niterate all registered types"]
+    ER --> VIS["Visitor\nwalk SchemaDescription per type/packet\nresolve wire types, enums, constraints, variants"]
+    VIS --> WJ["write_json()\nemit per-file JSON"]
+
+    DLL --> EVT["SetEvent\n(&quot;proto_dumper_done&quot;)"]
+
+    WJ --> PKT["data/protocol/packets/\nActorEventPacket.json\nTextPacket.json\n..."]
+    WJ --> TYP["data/protocol/types/\nVec3.json\nActorEvent.json\n..."]
 ```
-bedrock_server.exe (running)
-       |
-       |  DLL injection via injector.exe
-       v
-   DllMain -> CreateThread(DumpThread)
-       |
-       |-- libhat: sigscan for NetworkSystem::update
-       |-- funchook: hook NetworkSystem::update
-       |-- wait for first call -> capture NetworkSystem* this
-       |-- unhook
-       |
-       |-- NetworkSystem::mReflectionCtx -> cereal::ReflectionCtx*
-       |
-       |-- libhat: sigscan for createPacket
-       |-- createPacket(0, 1, 2, ...) -> enumerate packet IDs and names
-       |         stop when factory returns nullptr, skip 200-299
-       |
-       |-- libhat: sigscan for BasicSchema::lookup, BasicSchema::description
-       |-- entt::resolve(meta_ctx) -> iterate registered types
-       |-- extract SchemaDescription per packet payload
-       |
-       v
-  ProtoGenerator
-       |
-       |-- Pass 1: collect shared compound types (appear in 2+ packets)
-       |-- Emit common_types.proto
-       |-- Emit per-packet .proto files
-       |
-       v
-  ./data/proto/
-       |-- common_types.proto
-       |-- move_player.proto
-       |-- login.proto
-       |-- ...
-       |-- cereal_types.txt     (diagnostic: all registered entt types)
-       |-- dump_log.txt         (processing log)
-       |-- DONE.txt             (completion marker)
+
+## Output Format
+
+The output uses a Kaitai-inspired JSON schema. Each field carries its wire encoding as a type string, with enums, arrays, and optionality as orthogonal modifiers.
+
+### Packet
+
+```json
+{
+  "id": 27,
+  "name": "ActorEventPacket",
+  "fields": [
+    {
+      "name": "mRuntimeId",
+      "type": "varint64"
+    },
+    {
+      "name": "mEventId",
+      "type": "uvarint32",
+      "enum": "ActorEvent"
+    }
+  ]
+}
+```
+
+### Struct type
+
+```json
+{
+  "name": "Vec3",
+  "kind": "struct",
+  "fields": [
+    { "name": "x", "type": "float_le" },
+    { "name": "y", "type": "float_le" },
+    { "name": "z", "type": "float_le" }
+  ]
+}
+```
+
+### Enum type
+
+```json
+{
+  "name": "ActorEvent",
+  "kind": "enum",
+  "values": [
+    { "name": "NONE", "value": 0 },
+    { "name": "JUMP", "value": 1 }
+  ]
+}
+```
+
+### Field modifiers
+
+Fields can carry additional properties:
+
+| Key | Meaning |
+|-----|---------|
+| `enum` | Overlay an enum on the wire type |
+| `repeat` | Field is an array; value is the count prefix encoding (e.g. `"uvarint32"`) |
+| `optional` | Field is `std::optional<...>` |
+| `deprecated` | Marked deprecated in cereal |
+| `description` | Help text from cereal |
+| `constraints` | Min/max value, length, items, or pattern |
+
+### Map field
+
+```json
+{
+  "name": "Biomes",
+  "type": { "key": "uint16_le", "value": "BiomeDefinitionData" },
+  "repeat": "uvarint32"
+}
+```
+
+### Tagged variant field
+
+When a variant is discriminated by a sibling enum field:
+
+```json
+{
+  "name": "Body",
+  "type": {
+    "switch": {
+      "type": "varint32",
+      "name": "Message Type",
+      "enum": "TextPacketType"
+    },
+    "cases": ["MessageOnly", "AuthorAndMessage", "MessageAndParams"]
+  }
+}
+```
+
+### Untagged variant field
+
+When a variant carries an inline discriminator index:
+
+```json
+{
+  "name": "Rule Value",
+  "type": {
+    "switch": {
+      "type": "uint8"
+    },
+    "cases": ["null", "bool", "int32_le", "float_le"]
+  }
+}
 ```
 
 ## Cereal Internals
@@ -133,21 +232,10 @@ The C++ underlying type of an enum (e.g. `enum Foo : uint8_t`) does **not** dete
 
 | `SerializationTraits` | Bits | Wire encoding |
 |---|---|---|
-| No `EnumAsValue` (0x00) | — | **String** (the enum value name) |
+| No `EnumAsValue` (0x00) | -- | **String** (the enum value name) |
 | `EnumAsValue` (0x04) | bit 2 | Raw value, size based on underlying type (1 byte for Uint8, 2 for Uint16, etc.) |
-| `EnumAsValue + Compression` (0x05) | bits 0+2 | **Varint** — signed (`writeVarInt`) for Int types, unsigned (`writeUnsignedVarInt`) for Uint types |
+| `EnumAsValue + Compression` (0x05) | bits 0+2 | **Varint** -- signed (`writeVarInt`) for Int types, unsigned (`writeUnsignedVarInt`) for Uint types |
 | `EnumAsValue + BigEndian` (0x06) | bits 1+2 | **Fixed big-endian** (`writeInt` / `writeLong`) |
-
-Cross-validated against [CloudburstMC/Protocol](https://github.com/CloudburstMC/Protocol):
-
-| Enum | Traits | Underlying | Cloudburst encoding | Confirmed |
-|---|---|---|---|---|
-| `AnimatePacket.SwingSource` | 0 (none) | Uint8 | `helper.writeString()` / `readString()` | String |
-| `AnimatePacket.Action` | 4 (EnumAsValue) | Uint8 | `buffer.writeByte()` (v898) | Raw byte |
-| `PlayerActionType` | 5 (EnumAsValue+Compression) | Int32 | `VarInts.writeInt()` / `readInt()` | Signed varint |
-| `SetTitlePacket.TitleType` | 5 (EnumAsValue+Compression) | Int32 | `VarInts.writeInt()` / `readInt()` | Signed varint |
-| `LevelSoundEvent` | 5 (EnumAsValue+Compression) | Uint32 | `VarInts.writeUnsignedInt()` / `readUnsignedInt()` | Unsigned varint |
-| `PlayStatus` | 6 (EnumAsValue+BigEndian) | Int32 | `buffer.writeInt()` / `readInt()` | Big-endian fixed32 |
 
 ### Schema Description Extraction
 
@@ -170,19 +258,7 @@ SchemaDescription {
 }
 ```
 
-This tree contains field names, types, constraints, full enum value tables, default values, and deprecation info -- everything needed to generate `.proto` definitions.
-
-### Why Three RVAs
-
-The three BDS functions we call are not exported, so we resolve them by offset (RVA) from the module base address:
-
-| Function | Purpose |
-|---|---|
-| `ReflectionCtx::global()` | Get the singleton holding all registered types |
-| `BasicSchema::lookup(meta_ctx, type_info)` | Find the schema object for a given type |
-| `BasicSchema::description(ctx, config)` | Walk the schema and build the SchemaDescription tree |
-
-The alternative (walking `entt::meta_type::data()` directly) gives member type IDs and get/set pointers, but **not** field names, constraints, enum value tables, or deprecation info. That metadata is packed into cereal-specific `meta_custom_node` data that only `description()` knows how to unpack.
+This tree contains field names, types, constraints, full enum value tables, default values, and deprecation info -- everything needed to generate schema definitions.
 
 ### Serialization Modes
 
@@ -196,9 +272,9 @@ Each packet has a `SerializationMode`:
 
 BDS is actively migrating packets from manual to cereal. Since all packets have `cerealizer<T>::bind()` registrations regardless of mode, the reflection data is available for all of them.
 
-### Proto Field Ordering
+### Field Ordering
 
-Proto field numbers don't exist in cereal. Fields are serialized **in registration order** (the order `bind()` is called). The generated `.proto` files assign sequential field numbers to match this order.
+Fields are serialized **in registration order** (the order `bind()` is called). The output preserves this order since it determines the wire layout.
 
 ## Building
 
@@ -228,70 +304,23 @@ injector.exe -p my_server.exe
 # Custom DLL path
 injector.exe -d C:\path\to\proto_dumper.dll
 
-# Timeout after 30 seconds
+# Timeout after 30 seconds waiting for process
 injector.exe -t 30
+
+# Wait up to 10 seconds for DLL to finish (default: 5)
+injector.exe --dll-timeout 10
 ```
 
-Output goes to `data/proto/` relative to the host executable.
-
-## Configuration
-
-### Signatures
-
-All BDS function addresses are resolved at runtime via byte pattern scanning (libhat). Patterns are defined in `src/signatures.h`:
-
-```cpp
-namespace sig {
-    constexpr auto NETWORK_SYSTEM_UPDATE = "?? ?? ?? ?? ??"_sig;  // TODO
-    constexpr auto CREATE_PACKET         = "?? ?? ?? ?? ??"_sig;  // TODO
-    constexpr auto BASIC_SCHEMA_LOOKUP   = "?? ?? ?? ?? ??"_sig;  // TODO
-    constexpr auto BASIC_SCHEMA_DESC     = "?? ?? ?? ?? ??"_sig;  // TODO
-}
-```
-
-To find a signature in IDA:
-1. Navigate to the target function
-2. Select the first ~15-20 bytes of the prologue
-3. Copy as hex, replace variable bytes with `?`
-4. Verify uniqueness (should match exactly once in the module)
-
-Functions to find:
-- `NetworkSystem::update` -- hooked to capture the NetworkSystem instance
-- `MinecraftPackets::createPacket` -- called to enumerate packet IDs
-- `cereal::internal::BasicSchema::lookup` -- resolves type to schema object
-- `cereal::internal::BasicSchema::description` -- extracts SchemaDescription tree
+Output goes to `data/protocol/` relative to the host executable.
 
 ## Dependencies
 
 | Library | Version | Purpose |
 |---|---|---|
 | [EnTT](https://github.com/skypjack/entt) | latest | Meta reflection (must match BDS's entt version for ABI compatibility) |
-| [spdlog](https://github.com/gabime/spdlog) | v1.17.0 | Logging |
+| [nlohmann/json](https://github.com/nlohmann/json) | v3.11.3 | JSON serialization |
 | [argparse](https://github.com/p-ranav/argparse) | v3.2 | CLI argument parsing for injector |
-| [funchook](https://github.com/kubo/funchook) | v1.1.3 | Function hooking to capture NetworkSystem instance |
-| [libhat](https://github.com/BasedInc/libhat) | latest | SIMD signature scanning for BDS functions |
+| [libhat](https://github.com/BasedInc/libhat) | v0.9.0 | SIMD signature scanning |
+| [expected-lite](https://github.com/nonstd-lite/expected-lite) | v0.10.0 | `nonstd::expected` error handling |
 
 All fetched automatically via CMake FetchContent.
-
-## Project Structure
-
-```
-src/
-    main.cpp                          DLL entry point, hook + sigscan orchestration
-    generator.h/.cpp                  SchemaDescription -> .proto file generation
-    reader.h/.cpp                     Cereal schema extraction from ReflectionCtx
-    injector.cpp                      EXE that finds BDS process and injects the DLL
-    signatures.h                      Byte patterns for all BDS functions
-    common/
-        Bedrock.h                     Bedrock::EnableNonOwnerReferences stub
-        Packet.h                      Minimal ABI-compatible Packet base class
-    cereal/                           ABI-compatible cereal type declarations
-        Context.h                     ReflectionCtx, ReflectionContext
-        schema/
-            BasicSchema.h             BasicSchema base class
-            DynamicValue.h            Variant-based JSON-like value type
-            SchemaDescription.h       SchemaDescription, Member, EnumValue, constraints
-            SerializationTraits.h     SerializationTraits, ContextArea enums
-```
-
-Files under `common/` and `cereal/` mirror BDS's own header layout for easy cross-referencing with [bedrock-headers](https://github.com/nicholass003/bedrock-headers-litelv).
