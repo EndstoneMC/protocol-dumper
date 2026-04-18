@@ -2,12 +2,12 @@
 
 #include <cstddef>
 #include <functional>
-#include <memory>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 
+#include "cereal/Context.h"
 #include "cereal/schema/SchemaDescription.h"
 #include "models.h"
 
@@ -21,39 +21,41 @@ public:
     };
     using AliasMap = std::unordered_map<std::string, const cereal::SchemaDescription *, StringHash, std::equal_to<>>;
 
-    Visitor(const entt::meta_ctx &ctx, AliasMap aliases);
-    virtual ~Visitor() = default;
+    Visitor(const cereal::ReflectionCtx &ctx, const cereal::DescriptionConfig &config, AliasMap aliases);
 
-    [[nodiscard]] const std::vector<model::Packet> &packets() const { return mPackets; }
-    [[nodiscard]] const std::vector<std::unique_ptr<model::Class>> &classes() const { return mClasses; }
-
-    void visitClass(const std::string &name, const cereal::SchemaDescription &desc);
-    void visitPacket(int id, const std::string &name, const cereal::SchemaDescription &desc);
-
-protected:
-    virtual void visit(const cereal::SchemaDescription &desc);
-    virtual void visitScalar(const cereal::SchemaDescription &desc);
-    virtual void visitEnum(const cereal::SchemaDescription &desc);
-    virtual void visitObject(const cereal::SchemaDescription &desc);
-    virtual void visitArray(const cereal::SchemaDescription &desc);
-    virtual void visitMap(const cereal::SchemaDescription &desc);
-
-    virtual void visitField(const std::string &name, const cereal::internal::Member &member);
+    model::TypeDef visitType(const std::string &name, const cereal::SchemaDescription &desc);
+    model::Packet visitPacket(int id, const std::string &name, const cereal::SchemaDescription &desc);
 
 private:
-    [[nodiscard]] bool isAlias(std::string_view name) const;
-    [[nodiscard]] std::unique_ptr<model::FieldType> buildVariant(const entt::meta_type &variantType) const;
-    void visitStructFields(const cereal::SchemaDescription &desc);
+    struct Resolved {
+        model::TypeSpec spec;
+        std::string enum_name;
+        std::string repeat;
+    };
 
-    std::vector<model::Packet> mPackets;
-    std::vector<std::unique_ptr<model::Class>> mClasses;
+    Resolved visit(const cereal::SchemaDescription &desc);
+    Resolved visitScalar(const cereal::SchemaDescription &desc);
+    Resolved visitEnum(const cereal::SchemaDescription &desc);
+    Resolved visitObject(const cereal::SchemaDescription &desc);
+    Resolved visitArray(const cereal::SchemaDescription &desc);
+    Resolved visitMap(const cereal::SchemaDescription &desc);
+    Resolved buildVariant(const entt::meta_type &variantType);
+
+    model::Field visitField(const std::string &name, const cereal::internal::Member &member,
+                            const entt::meta_type &parent_meta);
+    std::vector<model::Field> visitStructFields(const cereal::SchemaDescription &desc);
+
     AliasMap mAliases;
-
+    const cereal::ReflectionCtx &mCtx;
+    cereal::DescriptionConfig mConfig;
     const entt::meta_ctx &mMetaCtx;
-    model::Class *mCurrentClass = nullptr;
-    model::Packet *mCurrentPacket = nullptr;
-    entt::meta_type mCurrentMetaType{};
-    std::unique_ptr<model::FieldType> *mTypeSlot = nullptr;
 };
+
+struct DumpResult {
+    std::vector<model::TypeDef> types;
+    std::vector<model::Packet> packets;
+};
+
+DumpResult dumpProtocol(const cereal::ReflectionCtx &ctx, const cereal::DescriptionConfig &config);
 
 }  // namespace proto

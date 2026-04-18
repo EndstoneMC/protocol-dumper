@@ -8,15 +8,11 @@
 
 namespace cereal {
 
-namespace internal {
-struct NullType {
-    bool operator==(NullType) const { return true; }
-};
-}  // namespace internal
+struct NullType {};
 
 class DynamicValue {
 public:
-    using Variant = std::variant<internal::NullType, bool, int64_t, double, std::string, std::vector<DynamicValue>,
+    using Variant = std::variant<NullType, bool, int64_t, double, std::string, std::vector<DynamicValue>,
                                  std::unordered_map<std::string, DynamicValue>>;
 
     DynamicValue() = default;

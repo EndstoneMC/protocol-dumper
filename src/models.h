@@ -1,16 +1,12 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
-#include <nlohmann/json.hpp>
-
 namespace proto::model {
-
-using Json = nlohmann::ordered_json;
 
 struct Constraints {
     std::optional<double> mMinimum;
@@ -22,113 +18,49 @@ struct Constraints {
     std::optional<std::string> mPattern;
 
     bool empty() const;
-    Json toJson() const;
 };
 
-class FieldType {
-public:
-    virtual ~FieldType() = default;
-    virtual Json toJson() const = 0;
-    virtual std::string enumName() const { return {}; }
-    virtual std::string repeat() const { return {}; }
+struct MapType {
+    std::string key;
+    std::string value;
 };
 
-class ScalarFieldType final : public FieldType {
-public:
-    std::string mWire;
-    Json toJson() const override;
+struct VariantType {
+    std::string switch_type;
+    std::string switch_name;
+    std::optional<std::string> switch_enum;
+    std::vector<std::string> cases;
 };
 
-class EnumFieldType final : public FieldType {
-public:
-    std::string mTypeName;
-    std::string mWire;
-    Json toJson() const override;
-    std::string enumName() const override { return mTypeName; }
+using TypeSpec = std::variant<std::string, MapType, VariantType>;
+
+struct Field {
+    std::string name;
+    TypeSpec type;
+    std::string enum_name;
+    std::string repeat;
+    bool optional = false;
+    bool deprecated = false;
+    std::string description;
+    std::optional<Constraints> constraints;
 };
 
-class ObjectFieldType final : public FieldType {
-public:
-    std::string mTypeName;
-    Json toJson() const override;
+struct EnumEntry {
+    std::string name;
+    std::int64_t value{};
+    std::string description;
 };
 
-class ArrayFieldType final : public FieldType {
-public:
-    std::string mLengthWire;
-    std::unique_ptr<FieldType> mElement;
-    Json toJson() const override;
-    std::string enumName() const override { return mElement ? mElement->enumName() : std::string{}; }
-    std::string repeat() const override { return mLengthWire; }
+struct TypeDef {
+    std::string name;
+    std::variant<std::vector<Field>, std::vector<EnumEntry>> body;
 };
 
-class MapFieldType final : public FieldType {
-public:
-    std::string mLengthWire;
-    std::unique_ptr<FieldType> mKey;
-    std::unique_ptr<FieldType> mValue;
-    Json toJson() const override;
-    std::string repeat() const override { return mLengthWire; }
-};
-
-class VariantFieldType final : public FieldType {
-public:
-    struct Tag {
-        std::string mName;
-        std::string mTypeName;
-    };
-    Tag mTag;
-    std::vector<std::string> mOf;
-    Json toJson() const override;
-};
-
-class Member {
-public:
-    virtual ~Member() = default;
-    virtual Json toJson() const = 0;
-
-    std::string mName;
-    std::optional<std::string> mDescription;
-};
-
-class Field final : public Member {
-public:
-    std::unique_ptr<FieldType> mType;
-    bool mRequired{false};
-    bool mDeprecated{false};
-    std::optional<Constraints> mConstraints;
-
-    Json toJson() const override;
-};
-
-class EnumValue final : public Member {
-public:
-    std::int64_t mValue{};
-
-    Json toJson() const override;
-};
-
-enum class ClassKind {
-    Struct,
-    Enum,
-};
-
-class Class {
-public:
-    std::string mName;
-    ClassKind mKind{ClassKind::Struct};
-    std::vector<std::unique_ptr<Member>> mMembers;
-
-    Json toJson() const;
-};
-
-class Packet {
-public:
-    int mId{};
-    std::string mName;
-    std::vector<Field> mFields;
-
-    Json toJson() const;
+struct Packet {
+    int id{};
+    std::string name;
+    std::string description;
+    std::vector<Field> fields;
 };
 
 }  // namespace proto::model
