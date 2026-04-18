@@ -7,7 +7,7 @@
 
 #include <nlohmann/json.hpp>
 
-namespace proto::output {
+namespace proto {
 
 using Json = nlohmann::ordered_json;
 
@@ -39,18 +39,18 @@ std::string stripTemplateArgs(const std::string &name)
     return name;
 }
 
-Json typeSpecToJson(const model::TypeSpec &ts)
+Json typeSpecToJson(const TypeSpec &ts)
 {
     if (auto *s = std::get_if<std::string>(&ts)) {
         return Json(*s);
     }
-    if (auto *m = std::get_if<model::MapType>(&ts)) {
+    if (auto *m = std::get_if<MapType>(&ts)) {
         Json j = Json::object();
         j["key"] = m->key;
         j["value"] = m->value;
         return j;
     }
-    if (auto *v = std::get_if<model::VariantType>(&ts)) {
+    if (auto *v = std::get_if<VariantType>(&ts)) {
         Json j = Json::object();
         Json sw = Json::object();
         if (!v->switch_type.empty()) sw["type"] = v->switch_type;
@@ -67,7 +67,7 @@ Json typeSpecToJson(const model::TypeSpec &ts)
     return Json();
 }
 
-Json constraintsToJson(const model::Constraints &c)
+Json constraintsToJson(const Constraints &c)
 {
     Json j = Json::object();
     if (c.mMinimum) j["minimum"] = *c.mMinimum;
@@ -80,7 +80,7 @@ Json constraintsToJson(const model::Constraints &c)
     return j;
 }
 
-Json fieldToJson(const model::Field &f)
+Json fieldToJson(const Field &f)
 {
     Json j = Json::object();
     j["name"] = f.name;
@@ -107,7 +107,7 @@ Json fieldToJson(const model::Field &f)
     return j;
 }
 
-Json enumEntryToJson(const model::EnumEntry &e)
+Json enumEntryToJson(const EnumEntry &e)
 {
     Json j = Json::object();
     j["name"] = e.name;
@@ -118,11 +118,11 @@ Json enumEntryToJson(const model::EnumEntry &e)
     return j;
 }
 
-Json typeDefToJson(const model::TypeDef &td)
+Json typeDefToJson(const TypeDef &td)
 {
     Json j = Json::object();
     j["name"] = td.name;
-    if (auto *fields = std::get_if<std::vector<model::Field>>(&td.body)) {
+    if (auto *fields = std::get_if<std::vector<Field>>(&td.body)) {
         j["kind"] = "struct";
         Json arr = Json::array();
         for (const auto &f : *fields) {
@@ -130,7 +130,7 @@ Json typeDefToJson(const model::TypeDef &td)
         }
         j["fields"] = std::move(arr);
     }
-    else if (auto *entries = std::get_if<std::vector<model::EnumEntry>>(&td.body)) {
+    else if (auto *entries = std::get_if<std::vector<EnumEntry>>(&td.body)) {
         j["kind"] = "enum";
         Json arr = Json::array();
         for (const auto &e : *entries) {
@@ -141,7 +141,7 @@ Json typeDefToJson(const model::TypeDef &td)
     return j;
 }
 
-Json packetToJson(const model::Packet &pkt)
+Json packetToJson(const Packet &pkt)
 {
     Json j = Json::object();
     j["id"] = pkt.id;
@@ -159,8 +159,8 @@ Json packetToJson(const model::Packet &pkt)
 
 }  // namespace
 
-void write_json(const std::vector<model::Packet> &packets,
-                const std::vector<model::TypeDef> &types,
+void write_json(const std::vector<Packet> &packets,
+                const std::vector<TypeDef> &types,
                 const std::filesystem::path &output_dir)
 {
     const auto packets_dir = output_dir / "packets";
@@ -189,4 +189,4 @@ void write_json(const std::vector<model::Packet> &packets,
     }
 }
 
-}  // namespace proto::output
+}  // namespace proto

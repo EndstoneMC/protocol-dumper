@@ -6,7 +6,7 @@
 #include <variant>
 #include <vector>
 
-namespace proto::model {
+namespace proto {
 
 struct Constraints {
     std::optional<double> mMinimum;
@@ -63,4 +63,4 @@ struct Packet {
     std::vector<Field> fields;
 };
 
-}  // namespace proto::model
+}  // namespace proto

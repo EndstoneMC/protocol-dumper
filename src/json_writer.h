@@ -5,10 +5,10 @@
 
 #include "models.h"
 
-namespace proto::output {
+namespace proto {
 
-void write_json(const std::vector<model::Packet> &packets,
-                const std::vector<model::TypeDef> &types,
+void write_json(const std::vector<Packet> &packets,
+                const std::vector<TypeDef> &types,
                 const std::filesystem::path &output_dir);
 
-}  // namespace proto::output
+}  // namespace proto

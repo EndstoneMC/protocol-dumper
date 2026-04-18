@@ -91,9 +91,9 @@ std::string lengthWire(SerializationTraits traits)
     return hasFlag(traits, SerializationTraits::NoSizeCompression) ? "uint32" : "uvarint32";
 }
 
-model::Constraints buildConstraints(const ConstraintDescription &c)
+Constraints buildConstraints(const ConstraintDescription &c)
 {
-    model::Constraints out;
+    Constraints out;
     out.mMinimum = c.mMinimum;
     out.mMaximum = c.mMaximum;
     out.mMinLength = c.mMinLength;
@@ -297,7 +297,7 @@ Visitor::Visitor(const cereal::ReflectionCtx &ctx, const cereal::DescriptionConf
 
 Visitor::Resolved Visitor::buildVariant(const entt::meta_type &variantType)
 {
-    model::VariantType vt;
+    VariantType vt;
     if (!variantType) {
         return {std::move(vt), {}, {}};
     }
@@ -408,15 +408,15 @@ Visitor::Resolved Visitor::visitMap(const cereal::SchemaDescription &desc)
 {
     auto key = desc.mKeyType ? visit(*desc.mKeyType) : Resolved{};
     auto val = desc.mMappedType ? visit(*desc.mMappedType) : Resolved{};
-    model::MapType mt;
+    MapType mt;
     mt.key = std::holds_alternative<std::string>(key.spec) ? std::get<std::string>(key.spec) : "unknown";
     mt.value = std::holds_alternative<std::string>(val.spec) ? std::get<std::string>(val.spec) : "unknown";
     return {std::move(mt), {}, lengthWire(getTraits(desc))};
 }
 
-model::Field Visitor::visitField(const std::string &name, const Member &member, const entt::meta_type &parent_meta)
+Field Visitor::visitField(const std::string &name, const Member &member, const entt::meta_type &parent_meta)
 {
-    model::Field field;
+    Field field;
     field.name = name;
     field.deprecated = member.mDeprecated;
 
@@ -450,7 +450,7 @@ model::Field Visitor::visitField(const std::string &name, const Member &member, 
         auto resolved = buildVariant(declaredType);
         // mControlValueType describes the wire encoding of the variant discriminator.
         // It takes precedence over the type-level resolution from buildVariant.
-        if (auto *vt = std::get_if<model::VariantType>(&resolved.spec); vt && member.mControlValueType) {
+        if (auto *vt = std::get_if<VariantType>(&resolved.spec); vt && member.mControlValueType) {
             vt->switch_type = lengthWire(getTraits(member));
         }
         field.type = std::move(resolved.spec);
@@ -474,7 +474,7 @@ model::Field Visitor::visitField(const std::string &name, const Member &member, 
     return field;
 }
 
-std::vector<model::Field> Visitor::visitStructFields(const cereal::SchemaDescription &desc)
+std::vector<Field> Visitor::visitStructFields(const cereal::SchemaDescription &desc)
 {
     if (!desc.mMembers) {
         return {};
@@ -494,7 +494,7 @@ std::vector<model::Field> Visitor::visitStructFields(const cereal::SchemaDescrip
     }
     std::sort(entries.begin(), entries.end(), [](const Entry &a, const Entry &b) { return a.ordinal < b.ordinal; });
 
-    std::vector<model::Field> fields;
+    std::vector<Field> fields;
     fields.reserve(entries.size());
     for (const auto &e : entries) {
         fields.push_back(visitField(*e.name, *e.member, parent));
@@ -502,7 +502,7 @@ std::vector<model::Field> Visitor::visitStructFields(const cereal::SchemaDescrip
 
     // Resolve tagged variant wire encodings from sibling enum fields (last resort).
     for (auto &field : fields) {
-        auto *vt = std::get_if<model::VariantType>(&field.type);
+        auto *vt = std::get_if<VariantType>(&field.type);
         if (!vt || !vt->switch_enum || !vt->switch_type.empty()) {
             continue;
         }
@@ -519,16 +519,16 @@ std::vector<model::Field> Visitor::visitStructFields(const cereal::SchemaDescrip
     return fields;
 }
 
-model::TypeDef Visitor::visitType(const std::string &name, const cereal::SchemaDescription &desc)
+TypeDef Visitor::visitType(const std::string &name, const cereal::SchemaDescription &desc)
 {
-    model::TypeDef td;
+    TypeDef td;
     td.name = name;
 
     if (desc.mEnumValues && !desc.mEnumValues->empty()) {
-        std::vector<model::EnumEntry> entries;
+        std::vector<EnumEntry> entries;
         entries.reserve(desc.mEnumValues->size());
         for (const auto &ev : *desc.mEnumValues) {
-            model::EnumEntry e;
+            EnumEntry e;
             e.name = ev.mName;
             e.value = ev.mValue;
             if (ev.mDescription && !ev.mDescription->empty()) {
@@ -544,9 +544,9 @@ model::TypeDef Visitor::visitType(const std::string &name, const cereal::SchemaD
     return td;
 }
 
-model::Packet Visitor::visitPacket(int id, const std::string &name, const cereal::SchemaDescription &desc)
+Packet Visitor::visitPacket(int id, const std::string &name, const cereal::SchemaDescription &desc)
 {
-    model::Packet pkt;
+    Packet pkt;
     pkt.id = id;
     pkt.name = name;
     pkt.fields = visitStructFields(desc);

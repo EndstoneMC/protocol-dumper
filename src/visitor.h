@@ -23,12 +23,12 @@ public:
 
     Visitor(const cereal::ReflectionCtx &ctx, const cereal::DescriptionConfig &config, AliasMap aliases);
 
-    model::TypeDef visitType(const std::string &name, const cereal::SchemaDescription &desc);
-    model::Packet visitPacket(int id, const std::string &name, const cereal::SchemaDescription &desc);
+    TypeDef visitType(const std::string &name, const cereal::SchemaDescription &desc);
+    Packet visitPacket(int id, const std::string &name, const cereal::SchemaDescription &desc);
 
 private:
     struct Resolved {
-        model::TypeSpec spec;
+        TypeSpec spec;
         std::string enum_name;
         std::string repeat;
     };
@@ -41,9 +41,9 @@ private:
     Resolved visitMap(const cereal::SchemaDescription &desc);
     Resolved buildVariant(const entt::meta_type &variantType);
 
-    model::Field visitField(const std::string &name, const cereal::internal::Member &member,
+    Field visitField(const std::string &name, const cereal::internal::Member &member,
                             const entt::meta_type &parent_meta);
-    std::vector<model::Field> visitStructFields(const cereal::SchemaDescription &desc);
+    std::vector<Field> visitStructFields(const cereal::SchemaDescription &desc);
 
     AliasMap mAliases;
     const cereal::ReflectionCtx &mCtx;
@@ -52,8 +52,8 @@ private:
 };
 
 struct DumpResult {
-    std::vector<model::TypeDef> types;
-    std::vector<model::Packet> packets;
+    std::vector<TypeDef> types;
+    std::vector<Packet> packets;
 };
 
 DumpResult dumpProtocol(const cereal::ReflectionCtx &ctx, const cereal::DescriptionConfig &config);

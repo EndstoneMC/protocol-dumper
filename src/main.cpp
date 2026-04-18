@@ -49,7 +49,7 @@ static void DumpSchemas()
     config.mIsTopLevel = true;
 
     auto [types, packets] = proto::dumpProtocol(ctx, config);
-    proto::output::write_json(packets, types, output_dir);
+    proto::write_json(packets, types, output_dir);
     std::println("Dumped {} types, {} packets to {}", types.size(), packets.size(), output_dir.string());
 }
 
