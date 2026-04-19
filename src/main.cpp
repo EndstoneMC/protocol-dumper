@@ -1,14 +1,18 @@
 #include <Windows.h>
 
 #include <filesystem>
+#include <fstream>
 #include <print>
-#include <string>
 
 #include "common/NetworkSystem.h"
 #include "common/Packet.h"
 #include "common/ServiceLocator.h"
-#include "json_writer.h"
 #include "visitor.h"
+
+template <class... Ts>
+struct overloads : Ts... {
+    using Ts::operator()...;
+};
 
 int main()
 {
@@ -22,14 +26,27 @@ int main()
     auto &network = static_cast<NetworkSystem &>(server->getNetwork());
     auto &ctx = network.getPacketReflectionCtx();
 
-    proto::Visitor visitor{ctx};
-    auto protocol = visitor.dump();
-
-    proto::JsonWriter writer(output_dir);
-    writer.write(protocol);
-
-    std::println("Dumped {} types, {} packets to {}", protocol.types.size(), protocol.packets.size(),
-                 output_dir.string());
+    proto::Visitor visitor(ctx);
+    for (const auto &type : visitor.getTypes() | std::views::values) {
+        std::visit(overloads{[&](auto &&arg) {
+                       using T = std::decay_t<decltype(arg)>;
+                       auto path = output_dir;
+                       if constexpr (std::is_same_v<T, proto::Packet>) {
+                           path /= "packets";
+                       }
+                       else {
+                           path /= "types";
+                       }
+                       create_directories(path);
+                       auto filename = arg.name;
+                       std::ranges::replace(filename, ':', '_');
+                       std::ofstream f(path / (filename + ".json"));
+                       nlohmann::ordered_json j = arg;
+                       f << j.dump(4);
+                   }},
+                   type);
+    }
+    std::println("Dumped to {}", output_dir.string());
     return 0;
 }
 

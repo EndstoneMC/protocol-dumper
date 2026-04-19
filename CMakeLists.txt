@@ -33,7 +33,6 @@ add_library(proto_dumper SHARED
         src/visitor.cpp
         src/common/Packet.cpp
         src/cereal/schema/BasicSchema.cpp
-        src/json_writer.cpp
 )
 target_include_directories(proto_dumper PRIVATE src)
 target_compile_definitions(proto_dumper PRIVATE nsel_CONFIG_SELECT_EXPECTED=nsel_EXPECTED_NONSTD)

@@ -89,26 +89,26 @@ public:
 
     struct SetterDescriptor {
         std::unique_ptr<BasicSchema> mPtr;
-        std::unique_ptr<cereal::Constraint> mConstraint;
-        cereal::ContextArea mAllowedAreas;
+        std::unique_ptr<Constraint> mConstraint;
+        ContextArea mAllowedAreas;
     };
 
     struct GetterDescriptor {
         std::unique_ptr<BasicSchema> mPtr;
-        cereal::ContextArea mAllowedAreas;
+        ContextArea mAllowedAreas;
     };
 
     struct MemberDescriptor {
         std::unique_ptr<BasicSchema> mPtr;
-        std::unique_ptr<cereal::Constraint> mConstraint;
+        std::unique_ptr<Constraint> mConstraint;
         std::string mOriginalEnumName;
         std::string mName;
         DynamicSetterArgCtor mDynamicSetterArgCtor;
         UserPropertiesMap mUserPropertiesMap;
         OverridingSet mOverridingTypes;
         std::string mErrorMessage;
-        cereal::SerializationTraits mSerializationTraits;
-        cereal::ContextArea mAllowedAreas;
+        SerializationTraits mSerializationTraits;
+        ContextArea mAllowedAreas;
         bool mIsDeprecatedComponent;
     };
 

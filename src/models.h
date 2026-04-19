@@ -6,7 +6,17 @@
 #include <variant>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 namespace proto {
+
+struct Type;
+struct Enum;
+struct Field;
+struct Map;
+struct Packet;
+struct TypeAlias;
+struct Variant;
 
 struct Constraints {
     std::optional<double> minimum;
@@ -22,47 +32,88 @@ struct Constraints {
     }
 };
 
-struct MapType {
-    std::string key;
-    std::string value;
-};
-
-struct VariantType {
-    std::string switch_type;
-    std::string switch_name;
-    std::optional<std::string> switch_enum;
-    std::vector<std::string> cases;
-};
-
-using TypeSpec = std::variant<std::string, MapType, VariantType>;
-
-struct Field {
+template <typename Derived>
+struct Model {
     std::string name;
-    TypeSpec type;
-    std::string enum_name;
-    std::string repeat;
-    bool optional = false;
-    bool deprecated = false;
-    std::string description;
-    std::optional<Constraints> constraints;
+
+    template <typename T>
+    [[nodiscard]] constexpr bool is() const
+    {
+        return std::is_base_of_v<T, Derived>;
+    }
+
+    [[nodiscard]] constexpr std::string_view kind() const
+    {
+        if constexpr (is<Type>()) {
+            return "class";
+        }
+        else if constexpr (is<Enum>()) {
+            return "enum";
+        }
+        return "";
+    }
 };
 
-struct EnumEntry {
-    std::string name;
-    std::int64_t value{};
-    std::string description;
-};
-
-struct TypeDef {
-    std::string name;
-    std::variant<std::vector<Field>, std::vector<EnumEntry>> body;
-};
-
-struct Packet {
-    int id{};
-    std::string name;
-    std::string description;
+struct Type : Model<Type> {
     std::vector<Field> fields;
 };
 
+struct Packet : Model<Packet> {
+    int id = 0;
+    std::optional<std::string> description;
+    Type payload;
+};
+
+struct TypeAlias : Model<TypeAlias> {
+    using ValueType = std::variant<std::string, Type>;
+    ValueType value;
+};
+
+struct Enum : Model<Enum> {
+    std::vector<std::pair<std::string, std::int64_t>> values;
+};
+
+struct Variant : Model<Variant> {
+    Type switch_;
+    std::vector<Type> cases;
+};
+
+struct Map : Model<Map> {
+    Type key_type;
+    Type value_type;
+};
+
+struct Field : Model<Field> {
+    Type type;
+    std::optional<Constraints> constraints;
+    bool optional = false;
+    bool deprecated = false;
+    std::string description;
+};
+
 }  // namespace proto
+
+template <>
+struct nlohmann::adl_serializer<proto::Packet> {
+    static void to_json(ordered_json &j, const proto::Packet &p)
+    {
+        j["id"] = p.id;
+        j["name"] = p.name;
+        if (p.description.has_value()) {
+            j["description"] = p.description.value();
+        }
+    }
+};
+
+template <>
+struct nlohmann::adl_serializer<proto::Type> {
+    static void to_json(ordered_json &j, const proto::Type &c) { j["name"] = c.name; }
+};
+
+template <>
+struct nlohmann::adl_serializer<proto::TypeAlias> {
+    static void to_json(ordered_json &j, const proto::TypeAlias &a)
+    {
+        std::visit([&](auto &&v) { j = v; }, a.value);
+    }
+};
