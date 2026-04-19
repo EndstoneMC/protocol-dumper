@@ -11,26 +11,7 @@
 #include "json_writer.h"
 #include "visitor.h"
 
-static void ListPackets()
-{
-    int count = 0;
-    for (int id = 1; id < 1024; id++) {
-        try {
-            auto pk = MinecraftPackets::createPacket(static_cast<MinecraftPacketIds>(id));
-            if (!pk) continue;
-            ++count;
-            if (pk->getSerializationMode() == SerializationMode::ManualOnly) {
-                std::println(stderr, "[{}] {}: ManualOnly", static_cast<int>(pk->getId()), pk->getName());
-            }
-        }
-        catch (...) {
-            break;
-        }
-    }
-    std::println("Enumerated {} packets", count);
-}
-
-static void DumpSchemas()
+int main()
 {
     wchar_t exe_path[MAX_PATH];
     GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
@@ -51,6 +32,7 @@ static void DumpSchemas()
     auto [types, packets] = proto::dumpProtocol(ctx, config);
     proto::write_json(packets, types, output_dir);
     std::println("Dumped {} types, {} packets to {}", types.size(), packets.size(), output_dir.string());
+    return 0;
 }
 
 BOOL WINAPI DllMain(HINSTANCE hDll, DWORD reason, LPVOID)
@@ -58,8 +40,7 @@ BOOL WINAPI DllMain(HINSTANCE hDll, DWORD reason, LPVOID)
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hDll);
         try {
-            ListPackets();
-            DumpSchemas();
+            main();
         }
         catch (const std::exception &e) {
             std::println(stderr, "FATAL: {}", e.what());

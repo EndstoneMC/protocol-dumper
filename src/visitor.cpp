@@ -94,13 +94,13 @@ std::string lengthWire(SerializationTraits traits)
 Constraints buildConstraints(const ConstraintDescription &c)
 {
     Constraints out;
-    out.mMinimum = c.mMinimum;
-    out.mMaximum = c.mMaximum;
-    out.mMinLength = c.mMinLength;
-    out.mMaxLength = c.mMaxLength;
-    out.mMinItems = c.mMinItems;
-    out.mMaxItems = c.mMaxItems;
-    out.mPattern = c.mPattern;
+    out.minimum = c.mMinimum;
+    out.maximum = c.mMaximum;
+    out.min_length = c.mMinLength;
+    out.max_length = c.mMaxLength;
+    out.min_items = c.mMinItems;
+    out.max_items = c.mMaxItems;
+    out.pattern = c.mPattern;
     return out;
 }
 

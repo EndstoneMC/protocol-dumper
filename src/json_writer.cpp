@@ -70,13 +70,13 @@ Json typeSpecToJson(const TypeSpec &ts)
 Json constraintsToJson(const Constraints &c)
 {
     Json j = Json::object();
-    if (c.mMinimum) j["minimum"] = *c.mMinimum;
-    if (c.mMaximum) j["maximum"] = *c.mMaximum;
-    if (c.mMinLength) j["min_length"] = *c.mMinLength;
-    if (c.mMaxLength) j["max_length"] = *c.mMaxLength;
-    if (c.mMinItems) j["min_items"] = *c.mMinItems;
-    if (c.mMaxItems) j["max_items"] = *c.mMaxItems;
-    if (c.mPattern) j["pattern"] = *c.mPattern;
+    if (c.minimum) j["minimum"] = *c.minimum;
+    if (c.maximum) j["maximum"] = *c.maximum;
+    if (c.min_length) j["min_length"] = *c.min_length;
+    if (c.max_length) j["max_length"] = *c.max_length;
+    if (c.min_items) j["min_items"] = *c.min_items;
+    if (c.max_items) j["max_items"] = *c.max_items;
+    if (c.pattern) j["pattern"] = *c.pattern;
     return j;
 }
 

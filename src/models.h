@@ -9,15 +9,17 @@
 namespace proto {
 
 struct Constraints {
-    std::optional<double> mMinimum;
-    std::optional<double> mMaximum;
-    std::optional<std::uint64_t> mMinLength;
-    std::optional<std::uint64_t> mMaxLength;
-    std::optional<std::uint64_t> mMinItems;
-    std::optional<std::uint64_t> mMaxItems;
-    std::optional<std::string> mPattern;
-
-    bool empty() const;
+    std::optional<double> minimum;
+    std::optional<double> maximum;
+    std::optional<std::uint64_t> min_length;
+    std::optional<std::uint64_t> max_length;
+    std::optional<std::uint64_t> min_items;
+    std::optional<std::uint64_t> max_items;
+    std::optional<std::string> pattern;
+    [[nodiscard]] bool empty() const
+    {
+        return !minimum && !maximum && !min_length && !max_length && !min_items && !max_items && !pattern;
+    }
 };
 
 struct MapType {
