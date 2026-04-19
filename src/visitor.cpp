@@ -190,21 +190,22 @@ cereal::internal::BasicSchema *getSchema(const entt::meta_type &t)
     return (d && d->mPtr) ? d->mPtr.get() : nullptr;
 }
 
-struct PacketSource {
-    int id;
-    std::string name;
-    std::string description;
-    cereal::SchemaDescription desc;
-};
+}  // namespace
 
-auto collectSchemas(const entt::meta_ctx &meta_ctx, const cereal::ReflectionCtx &ctx,
-                    const cereal::DescriptionConfig &config)
-    -> std::pair<std::vector<PacketSource>, std::unordered_map<std::string, cereal::SchemaDescription>>
+Visitor::Visitor(const cereal::ReflectionCtx &ctx) : mCtx(ctx), mMetaCtx(ctx.internal().mMetaCtx)
 {
-    std::vector<PacketSource> packet_sources;
-    std::unordered_map<std::string, cereal::SchemaDescription> type_sources;
+    using Extra = cereal::DescriptionConfig::Extra;
+    mConfig.mContextArea = cereal::ContextArea::ALL;
+    mConfig.mExtraInfo = Extra::networkingExtraInfo | Extra::nonPublicFlag;
+    mConfig.mIsTopLevel = true;
 
-    for (auto &&meta_type : entt::resolve(meta_ctx) | std::views::values) {
+    collectSchemas();
+    buildAliasMap();
+}
+
+void Visitor::collectSchemas()
+{
+    for (auto &&meta_type : entt::resolve(mMetaCtx) | std::views::values) {
         auto *descriptor = static_cast<cereal::internal::BasicSchema::TypeDescriptor *>(meta_type.custom());
         if (!descriptor || !descriptor->mPtr) {
             continue;
@@ -237,23 +238,20 @@ auto collectSchemas(const entt::meta_ctx &meta_ctx, const cereal::ReflectionCtx 
                 std::println(stderr, "ERROR - [{}] {}: failed to find payload schema", packet_id, name);
                 continue;
             }
-            packet_sources.push_back(
-                {packet_id, name, std::move(details), payload_schema->description(ctx.internal(), config)});
+            mPacketSources.push_back(
+                {packet_id, name, std::move(details), payload_schema->description(mCtx.internal(), mConfig)});
         }
         else {
-            type_sources.emplace(name, descriptor->mPtr->description(ctx.internal(), config));
+            mTypeSources.emplace(name, descriptor->mPtr->description(mCtx.internal(), mConfig));
         }
     }
-    return {std::move(packet_sources), std::move(type_sources)};
 }
 
-Visitor::AliasMap buildAliasMap(const entt::meta_ctx &meta_ctx,
-                                const std::unordered_map<std::string, cereal::SchemaDescription> &type_sources)
+void Visitor::buildAliasMap()
 {
-    Visitor::AliasMap aliases;
-    for (auto &&meta_type : entt::resolve(meta_ctx) | std::views::values) {
+    for (auto &&meta_type : entt::resolve(mMetaCtx) | std::views::values) {
         auto from = qualifiedName(meta_type);
-        if (!type_sources.contains(from)) {
+        if (!mTypeSources.contains(from)) {
             continue;
         }
         for (auto &&[func_id, func] : meta_type.func()) {
@@ -264,35 +262,27 @@ Visitor::AliasMap buildAliasMap(const entt::meta_ctx &meta_ctx,
             if (to == from) {
                 continue;
             }
-            if (auto it = type_sources.find(to); it != type_sources.end()) {
-                aliases.emplace(from, &it->second);
+            if (auto it = mTypeSources.find(to); it != mTypeSources.end()) {
+                mAliases.emplace(from, &it->second);
                 break;
             }
         }
     }
     // Collapse alias chains: a -> b -> c becomes a -> c.
-    for (auto &[from, target] : aliases) {
+    for (auto &[from, target] : mAliases) {
         std::unordered_map<std::string, bool> seen;
         while (target) {
             auto target_name = target->mName.value_or("");
             if (!seen.emplace(target_name, true).second) {
                 break;
             }
-            auto next = aliases.find(target_name);
-            if (next == aliases.end() || next->second == target) {
+            auto next = mAliases.find(target_name);
+            if (next == mAliases.end() || next->second == target) {
                 break;
             }
             target = next->second;
         }
     }
-    return aliases;
-}
-
-}  // namespace
-
-Visitor::Visitor(const cereal::ReflectionCtx &ctx, const cereal::DescriptionConfig &config, AliasMap aliases)
-    : mAliases(std::move(aliases)), mCtx(ctx), mConfig(config), mMetaCtx(ctx.internal().mMetaCtx)
-{
 }
 
 Visitor::Resolved Visitor::buildVariant(const entt::meta_type &variantType)
@@ -553,26 +543,21 @@ Packet Visitor::visitPacket(int id, const std::string &name, const cereal::Schem
     return pkt;
 }
 
-DumpResult dumpProtocol(const cereal::ReflectionCtx &ctx, const cereal::DescriptionConfig &config)
+Protocol Visitor::dump()
 {
-    auto &meta_ctx = ctx.internal().mMetaCtx;
-    auto [packet_sources, type_sources] = collectSchemas(meta_ctx, ctx, config);
-    auto aliases = buildAliasMap(meta_ctx, type_sources);
-
-    Visitor visitor{ctx, config, aliases};
-    DumpResult result;
-    for (const auto &[name, desc] : type_sources) {
-        if (aliases.contains(name)) {
+    Protocol out;
+    for (const auto &[name, desc] : mTypeSources) {
+        if (mAliases.contains(name)) {
             continue;
         }
-        result.types.push_back(visitor.visitType(name, desc));
+        out.types.push_back(visitType(name, desc));
     }
-    for (const auto &src : packet_sources) {
-        auto pkt = visitor.visitPacket(src.id, src.name, src.desc);
+    for (const auto &src : mPacketSources) {
+        auto pkt = visitPacket(src.id, src.name, src.desc);
         pkt.description = src.description;
-        result.packets.push_back(std::move(pkt));
+        out.packets.push_back(std::move(pkt));
     }
-    return result;
+    return out;
 }
 
 }  // namespace proto

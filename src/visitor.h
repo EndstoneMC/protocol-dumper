@@ -13,25 +13,42 @@
 
 namespace proto {
 
+struct Protocol {
+    std::vector<TypeDef> types;
+    std::vector<Packet> packets;
+};
+
 class Visitor {
 public:
+    explicit Visitor(const cereal::ReflectionCtx &ctx);
+
+    Protocol dump();
+
+private:
     struct StringHash {
         using is_transparent = void;
         std::size_t operator()(std::string_view s) const noexcept { return std::hash<std::string_view>{}(s); }
     };
     using AliasMap = std::unordered_map<std::string, const cereal::SchemaDescription *, StringHash, std::equal_to<>>;
 
-    Visitor(const cereal::ReflectionCtx &ctx, const cereal::DescriptionConfig &config, AliasMap aliases);
+    struct PacketSource {
+        int id;
+        std::string name;
+        std::string description;
+        cereal::SchemaDescription desc;
+    };
 
-    TypeDef visitType(const std::string &name, const cereal::SchemaDescription &desc);
-    Packet visitPacket(int id, const std::string &name, const cereal::SchemaDescription &desc);
-
-private:
     struct Resolved {
         TypeSpec spec;
         std::string enum_name;
         std::string repeat;
     };
+
+    void collectSchemas();
+    void buildAliasMap();
+
+    TypeDef visitType(const std::string &name, const cereal::SchemaDescription &desc);
+    Packet visitPacket(int id, const std::string &name, const cereal::SchemaDescription &desc);
 
     Resolved visit(const cereal::SchemaDescription &desc);
     Resolved visitScalar(const cereal::SchemaDescription &desc);
@@ -45,17 +62,12 @@ private:
                             const entt::meta_type &parent_meta);
     std::vector<Field> visitStructFields(const cereal::SchemaDescription &desc);
 
-    AliasMap mAliases;
     const cereal::ReflectionCtx &mCtx;
-    cereal::DescriptionConfig mConfig;
     const entt::meta_ctx &mMetaCtx;
+    cereal::DescriptionConfig mConfig;
+    std::vector<PacketSource> mPacketSources;
+    std::unordered_map<std::string, cereal::SchemaDescription> mTypeSources;
+    AliasMap mAliases;
 };
-
-struct DumpResult {
-    std::vector<TypeDef> types;
-    std::vector<Packet> packets;
-};
-
-DumpResult dumpProtocol(const cereal::ReflectionCtx &ctx, const cereal::DescriptionConfig &config);
 
 }  // namespace proto

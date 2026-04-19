@@ -14,7 +14,9 @@ namespace proto {
 class JsonWriter : public Writer {
 public:
     explicit JsonWriter(std::filesystem::path output_dir);
+    using Writer::write;
 
+protected:
     void write(const Packet &) override;
     void write(const TypeDef &) override;
     void write(const Field &) override;
@@ -24,7 +26,6 @@ public:
 
 private:
     using json = nlohmann::ordered_json;
-
     std::filesystem::path output_dir_;
     std::vector<json *> scope_;
     std::set<std::string> emitted_types_;

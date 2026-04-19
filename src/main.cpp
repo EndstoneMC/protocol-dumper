@@ -4,7 +4,6 @@
 #include <print>
 #include <string>
 
-#include "cereal/Context.h"
 #include "common/NetworkSystem.h"
 #include "common/Packet.h"
 #include "common/ServiceLocator.h"
@@ -23,19 +22,14 @@ int main()
     auto &network = static_cast<NetworkSystem &>(server->getNetwork());
     auto &ctx = network.getPacketReflectionCtx();
 
-    cereal::DescriptionConfig config{};
-    using Extra = cereal::DescriptionConfig::Extra;
-    config.mContextArea = cereal::ContextArea::ALL;
-    config.mExtraInfo = Extra::networkingExtraInfo | Extra::nonPublicFlag;
-    config.mIsTopLevel = true;
-
-    auto [types, packets] = proto::dumpProtocol(ctx, config);
+    proto::Visitor visitor{ctx};
+    auto protocol = visitor.dump();
 
     proto::JsonWriter writer(output_dir);
-    for (const auto &pkt : packets) writer.write(pkt);
-    for (const auto &td : types) writer.write(td);
+    writer.write(protocol);
 
-    std::println("Dumped {} types, {} packets to {}", types.size(), packets.size(), output_dir.string());
+    std::println("Dumped {} types, {} packets to {}", protocol.types.size(), protocol.packets.size(),
+                 output_dir.string());
     return 0;
 }
 
