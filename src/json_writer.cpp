@@ -2,14 +2,8 @@
 
 #include <cctype>
 #include <fstream>
-#include <set>
-#include <string>
-
-#include <nlohmann/json.hpp>
 
 namespace proto {
-
-using Json = nlohmann::ordered_json;
 
 namespace {
 
@@ -39,53 +33,78 @@ std::string stripTemplateArgs(const std::string &name)
     return name;
 }
 
-Json typeSpecToJson(const TypeSpec &ts)
+}  // namespace
+
+JsonWriter::JsonWriter(std::filesystem::path output_dir) : output_dir_(std::move(output_dir))
 {
-    if (auto *s = std::get_if<std::string>(&ts)) {
-        return Json(*s);
+    std::filesystem::create_directories(output_dir_ / "packets");
+    std::filesystem::create_directories(output_dir_ / "types");
+}
+
+void JsonWriter::write(const Packet &pkt)
+{
+    json doc = json::object();
+    doc["id"] = pkt.id;
+    doc["name"] = pkt.name;
+    if (!pkt.description.empty()) {
+        doc["description"] = pkt.description;
     }
-    if (auto *m = std::get_if<MapType>(&ts)) {
-        Json j = Json::object();
-        j["key"] = m->key;
-        j["value"] = m->value;
-        return j;
+    doc["fields"] = json::array();
+
+    scope_.push_back(&doc["fields"]);
+    for (const auto &f : pkt.fields) {
+        write(f);
     }
-    if (auto *v = std::get_if<VariantType>(&ts)) {
-        Json j = Json::object();
-        Json sw = Json::object();
-        if (!v->switch_type.empty()) sw["type"] = v->switch_type;
-        if (!v->switch_name.empty()) sw["name"] = v->switch_name;
-        if (v->switch_enum) sw["enum"] = *v->switch_enum;
-        if (!sw.empty()) j["switch"] = std::move(sw);
-        Json cases = Json::array();
-        for (const auto &c : v->cases) {
-            cases.push_back(c.empty() ? Json() : Json(c));
+    scope_.pop_back();
+
+    const auto filename = sanitizeName(pkt.name) + ".json";
+    std::ofstream out(output_dir_ / "packets" / filename);
+    out << doc.dump(2) << "\n";
+}
+
+void JsonWriter::write(const TypeDef &td)
+{
+    const auto base = stripTemplateArgs(td.name);
+    const auto filename = sanitizeName(base) + ".json";
+    if (!emitted_types_.insert(filename).second) {
+        return;
+    }
+
+    json doc = json::object();
+    doc["name"] = base;
+
+    if (auto *fields = std::get_if<std::vector<Field>>(&td.body)) {
+        doc["kind"] = "struct";
+        doc["fields"] = json::array();
+        scope_.push_back(&doc["fields"]);
+        for (const auto &f : *fields) {
+            write(f);
         }
-        j["cases"] = std::move(cases);
-        return j;
+        scope_.pop_back();
     }
-    return Json();
+    else if (auto *entries = std::get_if<std::vector<EnumEntry>>(&td.body)) {
+        doc["kind"] = "enum";
+        doc["values"] = json::array();
+        scope_.push_back(&doc["values"]);
+        for (const auto &e : *entries) {
+            write(e);
+        }
+        scope_.pop_back();
+    }
+
+    std::ofstream out(output_dir_ / "types" / filename);
+    out << doc.dump(2) << "\n";
 }
 
-Json constraintsToJson(const Constraints &c)
+void JsonWriter::write(const Field &f)
 {
-    Json j = Json::object();
-    if (c.minimum) j["minimum"] = *c.minimum;
-    if (c.maximum) j["maximum"] = *c.maximum;
-    if (c.min_length) j["min_length"] = *c.min_length;
-    if (c.max_length) j["max_length"] = *c.max_length;
-    if (c.min_items) j["min_items"] = *c.min_items;
-    if (c.max_items) j["max_items"] = *c.max_items;
-    if (c.pattern) j["pattern"] = *c.pattern;
-    return j;
-}
-
-Json fieldToJson(const Field &f)
-{
-    Json j = Json::object();
+    json j = json::object();
     j["name"] = f.name;
 
-    j["type"] = typeSpecToJson(f.type);
+    scope_.push_back(&j);
+    write(f.type);
+    scope_.pop_back();
+
     if (!f.enum_name.empty()) {
         j["enum"] = f.enum_name;
     }
@@ -102,90 +121,88 @@ Json fieldToJson(const Field &f)
         j["description"] = f.description;
     }
     if (f.constraints && !f.constraints->empty()) {
-        j["constraints"] = constraintsToJson(*f.constraints);
+        scope_.push_back(&j);
+        write(*f.constraints);
+        scope_.pop_back();
     }
-    return j;
+
+    scope_.back()->push_back(std::move(j));
 }
 
-Json enumEntryToJson(const EnumEntry &e)
+void JsonWriter::write(const EnumEntry &e)
 {
-    Json j = Json::object();
+    json j = json::object();
     j["name"] = e.name;
     j["value"] = e.value;
     if (!e.description.empty()) {
         j["description"] = e.description;
     }
-    return j;
+    scope_.back()->push_back(std::move(j));
 }
 
-Json typeDefToJson(const TypeDef &td)
+void JsonWriter::write(const Constraints &c)
 {
-    Json j = Json::object();
-    j["name"] = td.name;
-    if (auto *fields = std::get_if<std::vector<Field>>(&td.body)) {
-        j["kind"] = "struct";
-        Json arr = Json::array();
-        for (const auto &f : *fields) {
-            arr.push_back(fieldToJson(f));
-        }
-        j["fields"] = std::move(arr);
+    json j = json::object();
+    if (c.minimum) {
+        j["minimum"] = *c.minimum;
     }
-    else if (auto *entries = std::get_if<std::vector<EnumEntry>>(&td.body)) {
-        j["kind"] = "enum";
-        Json arr = Json::array();
-        for (const auto &e : *entries) {
-            arr.push_back(enumEntryToJson(e));
-        }
-        j["values"] = std::move(arr);
+    if (c.maximum) {
+        j["maximum"] = *c.maximum;
     }
-    return j;
+    if (c.min_length) {
+        j["min_length"] = *c.min_length;
+    }
+    if (c.max_length) {
+        j["max_length"] = *c.max_length;
+    }
+    if (c.min_items) {
+        j["min_items"] = *c.min_items;
+    }
+    if (c.max_items) {
+        j["max_items"] = *c.max_items;
+    }
+    if (c.pattern) {
+        j["pattern"] = *c.pattern;
+    }
+    (*scope_.back())["constraints"] = std::move(j);
 }
 
-Json packetToJson(const Packet &pkt)
+void JsonWriter::write(const TypeSpec &ts)
 {
-    Json j = Json::object();
-    j["id"] = pkt.id;
-    j["name"] = pkt.name;
-    if (!pkt.description.empty()) {
-        j["description"] = pkt.description;
+    json &parent = *scope_.back();
+    if (auto *s = std::get_if<std::string>(&ts)) {
+        parent["type"] = *s;
+        return;
     }
-    Json fields = Json::array();
-    for (const auto &f : pkt.fields) {
-        fields.push_back(fieldToJson(f));
+    if (auto *m = std::get_if<MapType>(&ts)) {
+        json j = json::object();
+        j["key"] = m->key;
+        j["value"] = m->value;
+        parent["type"] = std::move(j);
+        return;
     }
-    j["fields"] = std::move(fields);
-    return j;
-}
-
-}  // namespace
-
-void write_json(const std::vector<Packet> &packets,
-                const std::vector<TypeDef> &types,
-                const std::filesystem::path &output_dir)
-{
-    const auto packets_dir = output_dir / "packets";
-    const auto types_dir = output_dir / "types";
-    std::filesystem::create_directories(packets_dir);
-    std::filesystem::create_directories(types_dir);
-
-    for (const auto &pkt : packets) {
-        const auto filename = sanitizeName(pkt.name) + ".json";
-        std::ofstream out(packets_dir / filename);
-        out << packetToJson(pkt).dump(2) << "\n";
-    }
-
-    std::set<std::string> emitted;
-    for (const auto &td : types) {
-        const auto base = stripTemplateArgs(td.name);
-        const auto filename = sanitizeName(base) + ".json";
-        if (!emitted.insert(filename).second) {
-            continue;
+    if (auto *v = std::get_if<VariantType>(&ts)) {
+        json j = json::object();
+        json sw = json::object();
+        if (!v->switch_type.empty()) {
+            sw["type"] = v->switch_type;
         }
-
-        auto j = typeDefToJson(td);
-        j["name"] = base;
-        std::ofstream out(types_dir / filename);
-        out << j.dump(2) << "\n";
+        if (!v->switch_name.empty()) {
+            sw["name"] = v->switch_name;
+        }
+        if (v->switch_enum) {
+            sw["enum"] = *v->switch_enum;
+        }
+        if (!sw.empty()) {
+            j["switch"] = std::move(sw);
+        }
+        json cases = json::array();
+        for (const auto &c : v->cases) {
+            cases.push_back(c.empty() ? json() : json(c));
+        }
+        j["cases"] = std::move(cases);
+        parent["type"] = std::move(j);
+        return;
     }
 }
 

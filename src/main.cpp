@@ -30,7 +30,11 @@ int main()
     config.mIsTopLevel = true;
 
     auto [types, packets] = proto::dumpProtocol(ctx, config);
-    proto::write_json(packets, types, output_dir);
+
+    proto::JsonWriter writer(output_dir);
+    for (const auto &pkt : packets) writer.write(pkt);
+    for (const auto &td : types) writer.write(td);
+
     std::println("Dumped {} types, {} packets to {}", types.size(), packets.size(), output_dir.string());
     return 0;
 }
