@@ -8,15 +8,21 @@
 
 #include <nlohmann/json.hpp>
 
+#include "models.h"
+
 namespace proto {
 
 struct Type;
 struct Enum;
 struct Field;
-struct Map;
 struct Packet;
 struct TypeAlias;
-struct Variant;
+
+struct EnumField;
+struct VariantField;
+struct ArrayField;
+struct MapField;
+using FieldType = std::variant<Field, EnumField, VariantField, ArrayField, MapField>;
 
 struct Constraints {
     std::optional<double> minimum;
@@ -44,7 +50,7 @@ struct Model {
 };
 
 struct Type : Model<Type> {
-    std::vector<Field> fields;
+    std::vector<FieldType> fields;
 };
 
 struct Packet : Model<Packet> {
@@ -64,24 +70,35 @@ struct Enum : Model<Enum> {
 
 using TypeRef = std::variant<Type, Enum, TypeAlias>;
 
-struct Variant : Model<Variant> {
+template <typename Derived>
+struct FieldBase : Model<Derived> {
+    std::optional<std::string> description;
+    std::optional<Constraints> constraints;
+    bool optional = false;
+    bool deprecated = false;
+};
+
+struct Field : FieldBase<Field> {
+    TypeRef type;
+};
+
+struct EnumField : FieldBase<EnumField> {
+    TypeRef enum_type;
+};
+
+struct VariantField : FieldBase<VariantField> {
     TypeRef switch_on;
     std::vector<TypeRef> cases;
 };
 
-struct Map : Model<Map> {
-    TypeRef key_type;
-    TypeRef value_type;
+struct ArrayField : FieldBase<ArrayField> {
+    TypeRef repeat;
+    TypeRef element_type;
 };
 
-struct Field : Model<Field> {
-    std::variant<Type, Variant, Map> type;
-    std::optional<std::string> enum_name;
-    std::optional<std::string> repeat;
-    std::optional<Constraints> constraints;
-    bool optional = false;
-    bool deprecated = false;
-    std::string description;
+struct MapField : FieldBase<MapField> {
+    TypeRef key_type;
+    TypeRef value_type;
 };
 
 }  // namespace proto
@@ -173,55 +190,3 @@ struct nlohmann::adl_serializer<proto::TypeRef> {
         std::visit([&](auto &&v) { j = v; }, ref);
     }
 };
-
-template <>
-struct nlohmann::adl_serializer<proto::Variant> {
-    static void to_json(ordered_json &j, const proto::Variant &v)
-    {
-        j["switch"] = v.switch_on;
-        j["cases"] = v.cases;
-    }
-};
-
-template <>
-struct nlohmann::adl_serializer<proto::Map> {
-    static void to_json(ordered_json &j, const proto::Map &m)
-    {
-        j["key"] = m.key_type;
-        j["value"] = m.value_type;
-    }
-};
-
-inline void nlohmann::adl_serializer<proto::Field>::to_json(ordered_json &j, const proto::Field &f)
-{
-    j["name"] = f.name;
-    std::visit(
-        [&](auto &&v) {
-            using T = std::decay_t<decltype(v)>;
-            if constexpr (std::is_same_v<T, proto::Type>) {
-                j["type"] = v.name;
-            }
-            else {
-                j["type"] = v;
-            }
-        },
-        f.type);
-    if (f.enum_name) {
-        j["enum"] = *f.enum_name;
-    }
-    if (f.repeat) {
-        j["repeat"] = *f.repeat;
-    }
-    if (f.optional) {
-        j["optional"] = true;
-    }
-    if (f.deprecated) {
-        j["deprecated"] = true;
-    }
-    if (!f.description.empty()) {
-        j["description"] = f.description;
-    }
-    if (f.constraints && !f.constraints->empty()) {
-        j["constraints"] = *f.constraints;
-    }
-}

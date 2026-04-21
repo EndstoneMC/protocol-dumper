@@ -41,8 +41,7 @@ int main()
                        auto filename = arg.name;
                        std::ranges::replace(filename, ':', '_');
                        std::ofstream f(path / (filename + ".json"));
-                       nlohmann::ordered_json j = arg;
-                       f << j.dump(4);
+                       f << nlohmann::ordered_json(arg).dump(4);
                    }},
                    type);
     }
@@ -58,7 +57,7 @@ BOOL WINAPI DllMain(HINSTANCE hDll, DWORD reason, LPVOID)
             main();
         }
         catch (const std::exception &e) {
-            std::println(stderr, "FATAL: {}", e.what());
+            std::println(stderr, "!!! FATAL: {}", e.what());
         }
         if (auto hEvent = OpenEventA(EVENT_MODIFY_STATE, FALSE, "proto_dumper_done")) {
             SetEvent(hEvent);
