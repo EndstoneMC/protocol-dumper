@@ -12,8 +12,11 @@ namespace {
 
 std::string sanitise_typename(const entt::meta_type &type)
 {
-    if (type.info().hash() == entt::type_hash<std::string>()) {
+    switch (type.info().hash()) {
+    case entt::type_hash<std::string>():
         return "string";
+    default:
+        break;
     }
 
     constexpr std::string_view kPrefixes[] = {"struct ", "class ", "enum ", "union "};
@@ -40,6 +43,30 @@ std::string trim(std::string_view s)
         return {};
     }
     return std::string(s.substr(start, s.find_last_not_of(" \t\n\r") - start + 1));
+}
+
+std::string serialization_type(const entt::meta_type &type, cereal::SerializationTraits traits)
+{
+    const auto size = type.size_of();
+    if (size != 1 && size != 2 && size != 4 && size != 8) {
+        throw std::runtime_error(std::format("unsupported enum underlying size {} in {}", size, type.info().name()));
+    }
+
+    // Round-trip probe: int64(-1) -> enum -> int64. Unsigned underlying wraps the sign away.
+    bool is_signed = type.is_signed();
+
+    const bool compression = !!(traits & cereal::SerializationTraits::Compression);
+    const bool big_endian = !!(traits & cereal::SerializationTraits::BigEndian);
+    const std::string_view sign = is_signed ? "" : "u";
+
+    if (compression) {
+        const int width = (size == 8) ? 64 : 32;
+        return std::format("{}varint{}", sign, width);
+    }
+    if (size == 1) {
+        return std::format("{}int8", sign);
+    }
+    return std::format("{}int{}{}", sign, size * 8, big_endian ? "_be" : "");
 }
 
 }  // namespace
@@ -294,9 +321,11 @@ FieldType Visitor::buildField(const entt::meta_data &data)
         f.name = descriptor->mName;
         visit(type);
         f.enum_type = getTypeRef(type);
-        auto wire = entt::resolve<std::string>(meta_ctx_);
         if (!!(descriptor->mSerializationTraits & cereal::SerializationTraits::EnumAsValue)) {
-            // TODO: f.type = wire format
+            f.type = serialization_type(type, descriptor->mSerializationTraits);
+        }
+        else {
+            f.type = std::string("string");
         }
         return f;
     }
@@ -306,7 +335,17 @@ FieldType Visitor::buildField(const entt::meta_data &data)
         if (tpl == entt::resolve<entt::meta_class_template_tag<std::variant>>(meta_ctx_)) {
             VariantField f;
             f.name = descriptor->mName;
-            // TODO:
+            cereal::internal::BasicSchema::TaggedVariantDescriptor *tag = type.custom();
+            if (tag) {
+                auto tag_type = tag->mResolve(meta_ctx_);
+                visit(tag_type);
+                f.switch_on = getTypeRef(tag_type);
+            }
+            for (auto i = 0; i < type.template_arity(); ++i) {
+                auto c = type.template_arg(i);
+                visit(c);
+                f.cases.emplace_back(getTypeRef(c));
+            }
             return f;
         }
     }
@@ -323,8 +362,15 @@ FieldType Visitor::buildField(const entt::meta_data &data)
             type = type.template_arg(0);
         }
     }
-    visit(type);
-    f.type = getTypeRef(type);
+
+    if (type.is_integral()) {
+        f.type = serialization_type(type, descriptor->mSerializationTraits);
+    }
+    else {
+        visit(type);
+        f.type = getTypeRef(type);
+    }
+
     return f;
 }
 
