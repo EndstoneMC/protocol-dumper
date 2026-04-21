@@ -17,6 +17,7 @@ struct Enum;
 struct Field;
 struct Packet;
 struct TypeAlias;
+using TypeRef = std::variant<std::string, Type, Enum, std::reference_wrapper<TypeAlias>>;
 
 struct EnumField;
 struct VariantField;
@@ -59,16 +60,13 @@ struct Packet : Model<Packet> {
     Type payload;
 };
 
-struct TypeAlias : Model<TypeAlias> {
-    using ValueType = std::variant<std::string, Type>;
-    ValueType value;
-};
-
 struct Enum : Model<Enum> {
     std::vector<std::pair<std::string, std::int64_t>> values;
 };
 
-using TypeRef = std::variant<Type, Enum, TypeAlias>;
+struct TypeAlias : Model<TypeAlias> {
+    TypeRef value;
+};
 
 template <typename Derived>
 struct FieldBase : Model<Derived> {
@@ -133,8 +131,8 @@ struct nlohmann::adl_serializer<proto::Constraints> {
 };
 
 template <>
-struct nlohmann::adl_serializer<proto::Field> {
-    static void to_json(ordered_json &j, const proto::Field &f);
+struct nlohmann::adl_serializer<proto::FieldType> {
+    static void to_json(ordered_json &j, const proto::FieldType &ft);
 };
 
 template <>
@@ -151,7 +149,6 @@ struct nlohmann::adl_serializer<proto::Enum> {
     static void to_json(ordered_json &j, const proto::Enum &e)
     {
         j["name"] = e.name;
-        j["kind"] = "enum";
         j["values"] = ordered_json::array();
         for (const auto &[n, v] : e.values) {
             j["values"].push_back({
@@ -179,7 +176,20 @@ template <>
 struct nlohmann::adl_serializer<proto::TypeAlias> {
     static void to_json(ordered_json &j, const proto::TypeAlias &a)
     {
-        std::visit([&](auto &&v) { j = v; }, a.value);
+        std::visit(
+            [&](auto &&v) {
+                using T = std::decay_t<decltype(v)>;
+                if constexpr (std::is_same_v<T, std::string>) {
+                    j = v;
+                }
+                else if constexpr (std::is_same_v<T, std::reference_wrapper<proto::TypeAlias>>) {
+                    j = v.get();
+                }
+                else {
+                    j = v.name;
+                }
+            },
+            a.value);
     }
 };
 
@@ -187,6 +197,68 @@ template <>
 struct nlohmann::adl_serializer<proto::TypeRef> {
     static void to_json(ordered_json &j, const proto::TypeRef &ref)
     {
-        std::visit([&](auto &&v) { j = v; }, ref);
+        std::visit(
+            [&](auto &&v) {
+                using T = std::decay_t<decltype(v)>;
+                if constexpr (std::is_same_v<T, std::string>) {
+                    j = v;
+                }
+                else if constexpr (std::is_same_v<T, std::reference_wrapper<proto::TypeAlias>>) {
+                    j = v.get();
+                }
+                else {
+                    j = v.name;
+                }
+            },
+            ref);
     }
 };
+
+inline void nlohmann::adl_serializer<
+    std::variant<proto::Field, proto::EnumField, proto::VariantField, proto::ArrayField, proto::MapField>,
+    void>::to_json(ordered_json &j, const proto::FieldType &ft)
+{
+    std::visit(
+        [&](auto &&arg) {
+            using T = std::decay_t<decltype(arg)>;
+
+            j["name"] = arg.name;
+
+            if constexpr (std::is_same_v<T, proto::Field>) {
+                j["type"] = arg.type;
+            }
+            else if constexpr (std::is_same_v<T, proto::EnumField>) {
+                j["enum"] = arg.enum_type;
+            }
+            else if constexpr (std::is_same_v<T, proto::VariantField>) {
+                j["type"] = {
+                    {"switch", arg.switch_on},
+                    {"cases", arg.cases},
+                };
+            }
+            else if constexpr (std::is_same_v<T, proto::ArrayField>) {
+                j["type"] = arg.element_type;
+                j["repeat"] = arg.repeat;
+            }
+            else if constexpr (std::is_same_v<T, proto::MapField>) {
+                j["type"] = {
+                    {"key", arg.key_type},
+                    {"value", arg.value_type},
+                };
+            }
+
+            if (arg.description) {
+                j["description"] = *arg.description;
+            }
+            if (arg.constraints && !arg.constraints->empty()) {
+                j["constraints"] = *arg.constraints;
+            }
+            if (arg.optional) {
+                j["optional"] = true;
+            }
+            if (arg.deprecated) {
+                j["deprecated"] = true;
+            }
+        },
+        ft);
+}

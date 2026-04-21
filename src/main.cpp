@@ -28,22 +28,37 @@ int main()
 
     proto::Visitor visitor(ctx);
     for (const auto &type : visitor.getTypes() | std::views::values) {
-        std::visit(overloads{[&](auto &&arg) {
-                       using T = std::decay_t<decltype(arg)>;
-                       auto path = output_dir;
-                       if constexpr (std::is_same_v<T, proto::Packet>) {
-                           path /= "packets";
-                       }
-                       else {
-                           path /= "types";
-                       }
-                       create_directories(path);
-                       auto filename = arg.name;
-                       std::ranges::replace(filename, ':', '_');
-                       std::ofstream f(path / (filename + ".json"));
-                       f << nlohmann::ordered_json(arg).dump(4);
-                   }},
-                   type);
+        std::visit(
+            overloads{
+                [&](auto &&arg) {
+                    using T = std::decay_t<decltype(arg)>;
+                    auto path = output_dir;
+                    if constexpr (std::is_same_v<T, proto::TypeAlias>) {
+                        return;
+                    }
+                    else if constexpr (std::is_same_v<T, proto::Packet>) {
+                        path /= "packets";
+                    }
+                    else if constexpr (std::is_same_v<T, proto::Enum>) {
+                        path /= "enums";
+                    }
+                    else {
+                        path /= "types";
+                    }
+                    create_directories(path);
+                    auto filename = arg.name;
+                    std::ranges::replace(filename, ':', '_');
+                    std::ranges::replace(filename, '<', '_');
+                    std::ranges::replace(filename, '>', '_');
+                    auto file_path = path / (filename + ".json");
+                    std::ofstream f(file_path);
+                    f << nlohmann::ordered_json(arg).dump(4);
+                    if (!f) {
+                        std::println(stderr, "!!! ERROR: failed to write {}", file_path.string());
+                    }
+                },
+            },
+            type);
     }
     std::println("Dumped to {}", output_dir.string());
     return 0;

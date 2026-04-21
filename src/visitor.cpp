@@ -1,5 +1,6 @@
 #include "visitor.h"
 
+#include <limits>
 #include <print>
 #include <ranges>
 
@@ -212,10 +213,12 @@ void Visitor::visitType(const entt::meta_type &type, const cereal::SchemaDescrip
     Type ty;
     ty.name = sanitise_typename(type);
     if (desc.mMembers) {
-        ty.fields.reserve(desc.mMembers->size());
-        for (const auto &[name, member] : *desc.mMembers) {
-            std::println("  Field: {} - {}, {}, {}", name, static_cast<unsigned int>(member.mId),
-                         member.mName.value_or(""), member.mDescription.value_or(""));
+        auto &members = desc.mMembers.value();
+        std::map<int, Field> ordered;
+        for (const auto &[name, member] : members) {
+            if (!member.mOrdinalIndex) {
+                throw std::runtime_error(std::format("{} has no ordinal index", name));
+            }
             Field f;
             f.name = name;
             f.deprecated = member.mDeprecated;
@@ -223,10 +226,14 @@ void Visitor::visitType(const entt::meta_type &type, const cereal::SchemaDescrip
                 f.description = trim(*member.mDescription);
             }
 
-            // Type ref;
-            // ref.name = sanitise_typename(entt::resolve(meta_ctx_, member.mId));
-            // f.type = std::move(ref);
-            ty.fields.emplace_back(std::move(f));
+            if (ordered.contains(*member.mOrdinalIndex)) {
+                throw std::runtime_error(std::format("{} has duplicate ordinal index", name));
+            }
+            ordered[*member.mOrdinalIndex] = std::move(f);
+        }
+        ty.fields.reserve(ordered.size());
+        for (const auto &field : ordered | std::views::values) {
+            ty.fields.emplace_back(std::move(field));
         }
     }
     types_[type.id()] = std::move(ty);
