@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <variant>
@@ -18,6 +19,12 @@ struct Field;
 struct Packet;
 struct TypeAlias;
 using TypeRef = std::variant<std::string, Type, Enum, std::reference_wrapper<const TypeAlias>>;
+
+using Repeat = std::variant<std::uint64_t, std::string>;  // count | type
+
+struct ArraySpec;
+struct MapSpec;
+using TypeSpec = std::variant<TypeRef, std::shared_ptr<ArraySpec>, std::shared_ptr<MapSpec>>;
 
 struct EnumField;
 struct VariantField;
@@ -90,14 +97,24 @@ struct VariantField : FieldBase<VariantField> {
     std::vector<TypeRef> cases;
 };
 
+struct ArraySpec {
+    Repeat repeat;
+    TypeSpec element_type;
+};
+
+struct MapSpec {
+    TypeSpec key_type;
+    TypeSpec value_type;
+};
+
 struct ArrayField : FieldBase<ArrayField> {
-    TypeRef repeat;
-    TypeRef element_type;
+    Repeat repeat;
+    TypeSpec element_type;
 };
 
 struct MapField : FieldBase<MapField> {
-    TypeRef key_type;
-    TypeRef value_type;
+    TypeSpec key_type;
+    TypeSpec value_type;
 };
 
 }  // namespace proto
@@ -215,6 +232,39 @@ struct nlohmann::adl_serializer<proto::TypeRef> {
     }
 };
 
+template <>
+struct nlohmann::adl_serializer<proto::Repeat> {
+    static void to_json(ordered_json &j, const proto::Repeat &r)
+    {
+        std::visit([&](auto &&v) { j = v; }, r);
+    }
+};
+
+template <>
+struct nlohmann::adl_serializer<proto::TypeSpec> {
+    static void to_json(ordered_json &j, const proto::TypeSpec &s)
+    {
+        std::visit(
+            [&](auto &&v) {
+                using T = std::decay_t<decltype(v)>;
+                if constexpr (std::is_same_v<T, proto::TypeRef>) {
+                    j = v;
+                }
+                else if constexpr (std::is_same_v<T, std::shared_ptr<proto::ArraySpec>>) {
+                    j = ordered_json::object();
+                    j["type"] = v->element_type;
+                    j["repeat"] = v->repeat;
+                }
+                else if constexpr (std::is_same_v<T, std::shared_ptr<proto::MapSpec>>) {
+                    j = ordered_json::object();
+                    j["key"] = v->key_type;
+                    j["value"] = v->value_type;
+                }
+            },
+            s);
+    }
+};
+
 inline void nlohmann::adl_serializer<
     std::variant<proto::Field, proto::EnumField, proto::VariantField, proto::ArrayField, proto::MapField>,
     void>::to_json(ordered_json &j, const proto::FieldType &ft)
@@ -243,10 +293,9 @@ inline void nlohmann::adl_serializer<
                 j["repeat"] = arg.repeat;
             }
             else if constexpr (std::is_same_v<T, proto::MapField>) {
-                j["type"] = {
-                    {"key", arg.key_type},
-                    {"value", arg.value_type},
-                };
+                j["type"] = ordered_json::object();
+                j["type"]["key"] = arg.key_type;
+                j["type"]["value"] = arg.value_type;
             }
 
             if (arg.description) {

@@ -69,6 +69,16 @@ std::string serialization_type(const entt::meta_type &type, cereal::Serializatio
     return std::format("{}int{}{}", sign, size * 8, big_endian ? "_be" : "");
 }
 
+std::string repeat_type(cereal::SerializationTraits traits)
+{
+    const bool no_size_compression = !!(traits & cereal::SerializationTraits::NoSizeCompression);
+    const bool big_endian = !!(traits & cereal::SerializationTraits::BigEndian);
+    if (no_size_compression) {
+        return big_endian ? "uint32_be" : "uint32";
+    }
+    return "uvarint32";
+}
+
 }  // namespace
 
 Visitor::Visitor(const cereal::ReflectionCtx &ctx) : reflection_ctx_(ctx), meta_ctx_(ctx.internal().mMetaCtx)
@@ -273,56 +283,85 @@ FieldType Visitor::buildField(const entt::meta_data &data)
     }
 
     auto type = data.type();
+    const auto traits = descriptor->mSerializationTraits;
+
+    bool optional = false;
+    for (;;) {
+        if (!type.is_template_specialization()) {
+            break;
+        }
+        auto tpl = type.template_type();
+        if (tpl == entt::resolve<entt::meta_class_template_tag<std::optional>>(meta_ctx_)) {
+            optional = true;
+            type = type.template_arg(0);
+        }
+        else if (tpl == entt::resolve<entt::meta_class_template_tag<std::unique_ptr>>(meta_ctx_) ||
+                 tpl == entt::resolve<entt::meta_class_template_tag<std::shared_ptr>>(meta_ctx_)) {
+            type = type.template_arg(0);
+        }
+        else {
+            break;
+        }
+    }
+
     if (type.is_sequence_container()) {
         ArrayField f;
         f.name = descriptor->mName;
+        f.optional = optional;
         auto instance = type.construct();
         if (!instance) {
             throw std::runtime_error(std::format("cannot introspect non-default-constructible sequence {} in {}",
                                                  type.info().name(), descriptor->mName));
         }
-        auto element_type = instance.as_sequence_container().value_type();
+        auto seq = instance.as_sequence_container();
+        auto element_type = seq.value_type();
         if (!element_type) {
             throw std::runtime_error(
                 std::format("Invalid array element type in {} ({})", descriptor->mName, type.info().name()));
         }
-        visit(element_type);
-        f.element_type = getTypeRef(element_type);
+        if (const auto extent = seq.size(); extent > 0) {
+            f.repeat = static_cast<std::uint64_t>(extent);
+        }
+        else {
+            f.repeat = repeat_type(traits);
+        }
+        f.element_type = buildTypeSpec(element_type, traits);
         return f;
     }
 
     if (type.is_associative_container()) {
         MapField f;
         f.name = descriptor->mName;
+        f.optional = optional;
         auto instance = type.construct();
         if (!instance) {
             throw std::runtime_error(std::format("cannot introspect non-default-constructible associative {} in {}",
                                                  type.info().name(), descriptor->mName));
         }
-        auto key_type = instance.as_associative_container().key_type();
+        auto assoc = instance.as_associative_container();
+        auto key_type = assoc.key_type();
         if (!key_type) {
             throw std::runtime_error(
                 std::format("Invalid map key type in {} ({})", descriptor->mName, type.info().name()));
         }
-        visit(key_type);
-        auto value_type = instance.as_associative_container().mapped_type();
+        auto value_type = assoc.mapped_type();
         if (!value_type) {
             throw std::runtime_error(
                 std::format("Invalid map value type in {} ({})", descriptor->mName, type.info().name()));
         }
-        visit(value_type);
-        f.key_type = getTypeRef(key_type);
-        f.value_type = getTypeRef(value_type);
+        f.key_type = buildTypeSpec(key_type, traits);
+        f.value_type = buildTypeSpec(value_type, traits);
         return f;
     }
 
     if (type.is_enum()) {
         EnumField f;
         f.name = descriptor->mName;
+        f.optional = optional;
         visit(type);
         f.enum_type = getTypeRef(type);
-        if (!!(descriptor->mSerializationTraits & cereal::SerializationTraits::EnumAsValue)) {
-            f.type = serialization_type(type, descriptor->mSerializationTraits);
+        if (!!(traits & cereal::SerializationTraits::EnumAsValue)) {
+            f.type = serialization_type(type, traits);
         }
         else {
             f.type = std::string("string");
@@ -335,6 +374,7 @@ FieldType Visitor::buildField(const entt::meta_data &data)
         if (tpl == entt::resolve<entt::meta_class_template_tag<std::variant>>(meta_ctx_)) {
             VariantField f;
             f.name = descriptor->mName;
+            f.optional = optional;
             cereal::internal::BasicSchema::TaggedVariantDescriptor *tag = type.custom();
             if (tag) {
                 auto tag_type = tag->mResolve(meta_ctx_);
@@ -352,26 +392,77 @@ FieldType Visitor::buildField(const entt::meta_data &data)
 
     Field f;
     f.name = descriptor->mName;
-    if (type.is_template_specialization()) {
-        if (type.template_type() == entt::resolve<entt::meta_class_template_tag<std::optional>>(meta_ctx_)) {
-            type = type.template_arg(0);
-            f.optional = true;
-        }
-        else if (type.template_type() == entt::resolve<entt::meta_class_template_tag<std::unique_ptr>>(meta_ctx_) ||
-                 type.template_type() == entt::resolve<entt::meta_class_template_tag<std::shared_ptr>>(meta_ctx_)) {
-            type = type.template_arg(0);
-        }
-    }
-
+    f.optional = optional;
     if (type.is_integral()) {
-        f.type = serialization_type(type, descriptor->mSerializationTraits);
+        f.type = serialization_type(type, traits);
     }
     else {
         visit(type);
         f.type = getTypeRef(type);
     }
-
     return f;
+}
+
+TypeSpec Visitor::buildTypeSpec(entt::meta_type type, cereal::SerializationTraits traits)
+{
+    if (type.is_template_specialization()) {
+        auto tpl = type.template_type();
+        if (tpl == entt::resolve<entt::meta_class_template_tag<std::optional>>(meta_ctx_)) {
+            throw std::runtime_error(
+                std::format("std::optional inside a container element is not supported ({})", type.info().name()));
+        }
+        if (tpl == entt::resolve<entt::meta_class_template_tag<std::unique_ptr>>(meta_ctx_) ||
+            tpl == entt::resolve<entt::meta_class_template_tag<std::shared_ptr>>(meta_ctx_)) {
+            type = type.template_arg(0);
+        }
+    }
+
+    if (type.is_sequence_container()) {
+        auto instance = type.construct();
+        if (!instance) {
+            throw std::runtime_error(
+                std::format("cannot introspect non-default-constructible sequence {}", type.info().name()));
+        }
+        auto seq = instance.as_sequence_container();
+        auto element_type = seq.value_type();
+        if (!element_type) {
+            throw std::runtime_error(std::format("invalid array element type ({})", type.info().name()));
+        }
+        auto spec = std::make_shared<ArraySpec>();
+        if (const auto extent = seq.size(); extent > 0) {
+            spec->repeat = static_cast<std::uint64_t>(extent);
+        }
+        else {
+            spec->repeat = repeat_type(traits);
+        }
+        spec->element_type = buildTypeSpec(element_type, traits);
+        return spec;
+    }
+
+    if (type.is_associative_container()) {
+        auto instance = type.construct();
+        if (!instance) {
+            throw std::runtime_error(
+                std::format("cannot introspect non-default-constructible associative {}", type.info().name()));
+        }
+        auto assoc = instance.as_associative_container();
+        auto key_type = assoc.key_type();
+        auto value_type = assoc.mapped_type();
+        if (!key_type || !value_type) {
+            throw std::runtime_error(std::format("invalid map key/value type ({})", type.info().name()));
+        }
+        auto spec = std::make_shared<MapSpec>();
+        spec->key_type = buildTypeSpec(key_type, traits);
+        spec->value_type = buildTypeSpec(value_type, traits);
+        return spec;
+    }
+
+    if (type.is_integral()) {
+        return TypeRef{serialization_type(type, traits)};
+    }
+
+    visit(type);
+    return getTypeRef(type);
 }
 
 bool Visitor::isVisited(const entt::meta_type &type) const

@@ -25,6 +25,7 @@ private:
     void visitType(const entt::meta_type &type);
 
     FieldType buildField(const entt::meta_data &data);
+    TypeSpec buildTypeSpec(entt::meta_type type, cereal::SerializationTraits traits);
 
     [[nodiscard]] bool isVisited(const entt::meta_type &type) const;
     [[nodiscard]] TypeRef getTypeRef(const entt::meta_type &type) const;
