@@ -95,8 +95,14 @@ struct EnumField : FieldBase<EnumField> {
     TypeRef enum_type;
 };
 
+struct SwitchOn {
+    std::string type;
+    std::optional<std::string> name;
+    std::optional<TypeRef> enum_type;
+};
+
 struct VariantField : FieldBase<VariantField> {
-    TypeRef switch_on;
+    SwitchOn switch_on;
     std::vector<TypeRef> cases;
 };
 
@@ -111,7 +117,7 @@ struct MapSpec {
 };
 
 struct VariantSpec {
-    TypeRef switch_on;
+    SwitchOn switch_on;
     std::vector<TypeRef> cases;
 };
 
@@ -242,6 +248,21 @@ struct nlohmann::adl_serializer<proto::TypeRef> {
                 }
             },
             ref);
+    }
+};
+
+template <>
+struct nlohmann::adl_serializer<proto::SwitchOn> {
+    static void to_json(ordered_json &j, const proto::SwitchOn &s)
+    {
+        j = ordered_json::object();
+        j["type"] = s.type;
+        if (s.name) {
+            j["name"] = *s.name;
+        }
+        if (s.enum_type) {
+            j["enum"] = *s.enum_type;
+        }
     }
 };
 

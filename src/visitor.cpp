@@ -403,10 +403,16 @@ TypeSpec Visitor::buildTypeSpec(entt::meta_type type, cereal::SerializationTrait
         if (cereal::internal::BasicSchema::TaggedVariantDescriptor *tag = type.custom()) {
             auto tag_type = tag->mResolve(meta_ctx_);
             visit(tag_type);
-            spec->switch_on = getTypeRef(tag_type);
+            spec->switch_on.type = serialization_type(meta_ctx_, tag_type, cereal::SerializationTraits::Compression);
+            if (!tag->mTaggedName.empty()) {
+                spec->switch_on.name = tag->mTaggedName;
+            }
+            if (tag_type.is_enum()) {
+                spec->switch_on.enum_type = getTypeRef(tag_type);
+            }
         }
         else {
-            spec->switch_on = repeat_type(traits);
+            spec->switch_on.type = repeat_type(traits);
         }
         for (auto i = 0; i < type.template_arity(); ++i) {
             auto c = type.template_arg(i);
