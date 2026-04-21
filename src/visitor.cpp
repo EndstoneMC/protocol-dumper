@@ -42,6 +42,77 @@ std::string trim(std::string_view s)
     return std::string(s.substr(start, s.find_last_not_of(" \t\n\r") - start + 1));
 }
 
+std::string primitive_name(cereal::internal::ReflectedType rt, cereal::SerializationTraits traits)
+{
+    using RT = cereal::internal::ReflectedType;
+    const bool compressed = !!(traits & cereal::SerializationTraits::Compression);
+    const bool big_endian = !!(traits & cereal::SerializationTraits::BigEndian);
+
+    if (compressed) {
+        switch (rt) {
+        case RT::Int32:
+            return "varint32";
+        case RT::Uint32:
+            return "uvarint32";
+        case RT::Int64:
+            return "varint64";
+        case RT::Uint64:
+            return "uvarint64";
+        default:
+            break;
+        }
+    }
+
+    std::string name;
+    bool sized_numeric = true;
+    switch (rt) {
+    case RT::Bool:
+        name = "bool";
+        sized_numeric = false;
+        break;
+    case RT::String:
+        name = "string";
+        sized_numeric = false;
+        break;
+    case RT::Int8:
+        name = "int8";
+        break;
+    case RT::Uint8:
+        name = "uint8";
+        break;
+    case RT::Int16:
+        name = "int16";
+        break;
+    case RT::Uint16:
+        name = "uint16";
+        break;
+    case RT::Int32:
+        name = "int32";
+        break;
+    case RT::Uint32:
+        name = "uint32";
+        break;
+    case RT::Int64:
+        name = "int64";
+        break;
+    case RT::Uint64:
+        name = "uint64";
+        break;
+    case RT::Float:
+        name = "float";
+        break;
+    case RT::Double:
+        name = "double";
+        break;
+    default:
+        throw std::runtime_error(std::format("unsupported primitive reflected type: {}", static_cast<int>(rt)));
+    }
+    if (sized_numeric && big_endian) {
+        name += "_be";
+    }
+    return name;
+}
+
 }  // namespace
 
 Visitor::Visitor(const cereal::ReflectionCtx &ctx) : reflection_ctx_(ctx), meta_ctx_(ctx.internal().mMetaCtx)
@@ -108,7 +179,7 @@ void Visitor::visitPacket(const entt::meta_type &type)
         return;  // already visited
     }
 
-    std::println("Packet: {}", type.info().name());
+    // std::println("Packet: {}", type.info().name());
     const cereal::internal::BasicSchema::TypeDescriptor *descriptor = type.custom();
     if (!descriptor) {
         throw std::runtime_error("packet missing type descriptor");
@@ -191,7 +262,7 @@ void Visitor::visitEnum(const entt::meta_type &type, const cereal::SchemaDescrip
         return;  // already visited
     }
 
-    std::println("Enum: {}", type.info().name());
+    // std::println("Enum: {}", type.info().name());
     Enum en;
     en.name = sanitise_typename(type);
     if (desc.mEnumValues) {
@@ -209,7 +280,7 @@ void Visitor::visitType(const entt::meta_type &type, const cereal::SchemaDescrip
         return;  // already visited
     }
 
-    std::println("Type: {}", type.info().name());
+    // std::println("Type: {}", type.info().name());
     Type ty;
     ty.name = sanitise_typename(type);
     if (desc.mMembers) {
@@ -219,17 +290,10 @@ void Visitor::visitType(const entt::meta_type &type, const cereal::SchemaDescrip
             if (!member.mOrdinalIndex) {
                 throw std::runtime_error(std::format("{} has no ordinal index", name));
             }
-            Field f;
-            f.name = name;
-            f.deprecated = member.mDeprecated;
-            if (member.mDescription) {
-                f.description = trim(*member.mDescription);
-            }
-
             if (ordered.contains(*member.mOrdinalIndex)) {
                 throw std::runtime_error(std::format("{} has duplicate ordinal index", name));
             }
-            ordered[*member.mOrdinalIndex] = std::move(f);
+            ordered[*member.mOrdinalIndex] = visitField(name, member);
         }
         ty.fields.reserve(ordered.size());
         for (const auto &field : ordered | std::views::values) {
@@ -237,6 +301,49 @@ void Visitor::visitType(const entt::meta_type &type, const cereal::SchemaDescrip
         }
     }
     types_[type.id()] = std::move(ty);
+}
+
+Field Visitor::visitField(const std::string &name, const cereal::internal::Member &member)
+{
+    Field f;
+    f.name = name;
+    f.deprecated = member.mDeprecated;
+    if (member.mDescription) {
+        f.description = trim(*member.mDescription);
+    }
+
+    if (member.mId != 0) {
+        auto resolved = entt::resolve(meta_ctx_, member.mId);
+        if (!resolved) {
+            std::println("!Warning: {} references unresolved type id {}", name, member.mId);
+            f.type = member.mName.value_or(name);
+        }
+        else if (const auto it = types_.find(member.mId); it != types_.end()) {
+            if (auto *alias = std::get_if<TypeAlias>(&it->second)) {
+                f.type = std::ref(*alias);
+            }
+            else if (auto *user_ty = std::get_if<Type>(&it->second)) {
+                f.type = *user_ty;
+            }
+            else if (auto *en = std::get_if<Enum>(&it->second)) {
+                f.type = *en;
+            }
+            else {
+                f.type = sanitise_typename(resolved);
+            }
+        }
+        else {
+            f.type = sanitise_typename(resolved);
+        }
+    }
+    else if (member.mType) {
+        f.type = primitive_name(*member.mType, member.mSerializationTraits.value_or(cereal::SerializationTraits::None));
+    }
+    else {
+        std::println("!Warning: {} has neither id nor reflected type", name);
+    }
+
+    return f;
 }
 
 bool Visitor::isVisited(const entt::meta_type &type) const

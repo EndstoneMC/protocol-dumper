@@ -11,6 +11,8 @@ enum class ContextArea : uint8_t {
     VANILLA = 2,
     INTERNAL = 4,
     ALL = 255,
+    NON_PUBLIC = 6,
+    _entt_enum_as_bitmask = 255,
 };
 
 enum class SerializationTraits : uint8_t {
@@ -20,6 +22,7 @@ enum class SerializationTraits : uint8_t {
     EnumAsValue = 4,
     NoSizeCompression = 8,
     SkipAlsoReadAs = 16,
+    _entt_enum_as_bitmask = 255
 };
 
 }  // namespace cereal

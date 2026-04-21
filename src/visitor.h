@@ -23,6 +23,7 @@ private:
     void visitTypeAlias(const entt::meta_type &type, const entt::meta_type &value);
     void visitEnum(const entt::meta_type &type, const cereal::SchemaDescription &desc);
     void visitType(const entt::meta_type &type, const cereal::SchemaDescription &desc);
+    Field visitField(const std::string &name, const cereal::internal::Member &member);
 
     [[nodiscard]] bool isVisited(const entt::meta_type &type) const;
 
