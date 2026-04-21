@@ -305,56 +305,6 @@ FieldType Visitor::buildField(const entt::meta_data &data)
         }
     }
 
-    if (type.is_sequence_container()) {
-        ArrayField f;
-        f.name = descriptor->mName;
-        f.optional = optional;
-        auto instance = type.construct();
-        if (!instance) {
-            throw std::runtime_error(std::format("cannot introspect non-default-constructible sequence {} in {}",
-                                                 type.info().name(), descriptor->mName));
-        }
-        auto seq = instance.as_sequence_container();
-        auto element_type = seq.value_type();
-        if (!element_type) {
-            throw std::runtime_error(
-                std::format("Invalid array element type in {} ({})", descriptor->mName, type.info().name()));
-        }
-        if (const auto extent = seq.size(); extent > 0) {
-            f.repeat = static_cast<std::uint64_t>(extent);
-        }
-        else {
-            f.repeat = repeat_type(traits);
-        }
-        f.element_type = buildTypeSpec(element_type, traits);
-        return f;
-    }
-
-    if (type.is_associative_container()) {
-        MapField f;
-        f.name = descriptor->mName;
-        f.optional = optional;
-        auto instance = type.construct();
-        if (!instance) {
-            throw std::runtime_error(std::format("cannot introspect non-default-constructible associative {} in {}",
-                                                 type.info().name(), descriptor->mName));
-        }
-        auto assoc = instance.as_associative_container();
-        auto key_type = assoc.key_type();
-        if (!key_type) {
-            throw std::runtime_error(
-                std::format("Invalid map key type in {} ({})", descriptor->mName, type.info().name()));
-        }
-        auto value_type = assoc.mapped_type();
-        if (!value_type) {
-            throw std::runtime_error(
-                std::format("Invalid map value type in {} ({})", descriptor->mName, type.info().name()));
-        }
-        f.key_type = buildTypeSpec(key_type, traits);
-        f.value_type = buildTypeSpec(value_type, traits);
-        return f;
-    }
-
     if (type.is_enum()) {
         EnumField f;
         f.name = descriptor->mName;
@@ -370,38 +320,42 @@ FieldType Visitor::buildField(const entt::meta_data &data)
         return f;
     }
 
-    if (type.is_template_specialization()) {
-        auto tpl = type.template_type();
-        if (tpl == entt::resolve<entt::meta_class_template_tag<std::variant>>(meta_ctx_)) {
-            VariantField f;
-            f.name = descriptor->mName;
-            f.optional = optional;
-            cereal::internal::BasicSchema::TaggedVariantDescriptor *tag = type.custom();
-            if (tag) {
-                auto tag_type = tag->mResolve(meta_ctx_);
-                visit(tag_type);
-                f.switch_on = getTypeRef(tag_type);
+    return std::visit(
+        [&](auto &&spec) -> FieldType {
+            using T = std::decay_t<decltype(spec)>;
+            if constexpr (std::is_same_v<T, std::shared_ptr<ArraySpec>>) {
+                ArrayField f;
+                f.name = descriptor->mName;
+                f.optional = optional;
+                f.repeat = std::move(spec->repeat);
+                f.element_type = std::move(spec->element_type);
+                return f;
             }
-            for (auto i = 0; i < type.template_arity(); ++i) {
-                auto c = type.template_arg(i);
-                visit(c);
-                f.cases.emplace_back(getTypeRef(c));
+            else if constexpr (std::is_same_v<T, std::shared_ptr<MapSpec>>) {
+                MapField f;
+                f.name = descriptor->mName;
+                f.optional = optional;
+                f.key_type = std::move(spec->key_type);
+                f.value_type = std::move(spec->value_type);
+                return f;
             }
-            return f;
-        }
-    }
-
-    Field f;
-    f.name = descriptor->mName;
-    f.optional = optional;
-    if (type.is_integral()) {
-        f.type = serialization_type(type, traits);
-    }
-    else {
-        visit(type);
-        f.type = getTypeRef(type);
-    }
-    return f;
+            else if constexpr (std::is_same_v<T, std::shared_ptr<VariantSpec>>) {
+                VariantField f;
+                f.name = descriptor->mName;
+                f.optional = optional;
+                f.switch_on = std::move(spec->switch_on);
+                f.cases = std::move(spec->cases);
+                return f;
+            }
+            else {
+                Field f;
+                f.name = descriptor->mName;
+                f.optional = optional;
+                f.type = std::forward<decltype(spec)>(spec);
+                return f;
+            }
+        },
+        buildTypeSpec(type, traits));
 }
 
 TypeSpec Visitor::buildTypeSpec(entt::meta_type type, cereal::SerializationTraits traits)
@@ -416,6 +370,25 @@ TypeSpec Visitor::buildTypeSpec(entt::meta_type type, cereal::SerializationTrait
             tpl == entt::resolve<entt::meta_class_template_tag<std::shared_ptr>>(meta_ctx_)) {
             type = type.template_arg(0);
         }
+    }
+
+    if (type.is_template_specialization() &&
+        type.template_type() == entt::resolve<entt::meta_class_template_tag<std::variant>>(meta_ctx_)) {
+        auto spec = std::make_shared<VariantSpec>();
+        if (cereal::internal::BasicSchema::TaggedVariantDescriptor *tag = type.custom()) {
+            auto tag_type = tag->mResolve(meta_ctx_);
+            visit(tag_type);
+            spec->switch_on = getTypeRef(tag_type);
+        }
+        else {
+            spec->switch_on = repeat_type(traits);
+        }
+        for (auto i = 0; i < type.template_arity(); ++i) {
+            auto c = type.template_arg(i);
+            visit(c);
+            spec->cases.emplace_back(getTypeRef(c));
+        }
+        return spec;
     }
 
     if (type.is_sequence_container()) {

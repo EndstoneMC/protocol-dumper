@@ -24,7 +24,11 @@ using Repeat = std::variant<std::uint64_t, std::string>;  // count | type
 
 struct ArraySpec;
 struct MapSpec;
-using TypeSpec = std::variant<TypeRef, std::shared_ptr<ArraySpec>, std::shared_ptr<MapSpec>>;
+struct VariantSpec;
+using TypeSpec = std::variant<TypeRef,
+                              std::shared_ptr<ArraySpec>,
+                              std::shared_ptr<MapSpec>,
+                              std::shared_ptr<VariantSpec>>;
 
 struct EnumField;
 struct VariantField;
@@ -106,6 +110,11 @@ struct ArraySpec {
 struct MapSpec {
     TypeSpec key_type;
     TypeSpec value_type;
+};
+
+struct VariantSpec {
+    TypeRef switch_on;
+    std::vector<TypeRef> cases;
 };
 
 struct ArrayField : FieldBase<ArrayField> {
@@ -237,7 +246,18 @@ template <>
 struct nlohmann::adl_serializer<proto::Repeat> {
     static void to_json(ordered_json &j, const proto::Repeat &r)
     {
-        std::visit([&](auto &&v) { j = v; }, r);
+        j = ordered_json::object();
+        std::visit(
+            [&](auto &&v) {
+                using T = std::decay_t<decltype(v)>;
+                if constexpr (std::is_same_v<T, std::uint64_t>) {
+                    j["count"] = v;
+                }
+                else if constexpr (std::is_same_v<T, std::string>) {
+                    j["prefix"] = v;
+                }
+            },
+            r);
     }
 };
 
@@ -260,6 +280,11 @@ struct nlohmann::adl_serializer<proto::TypeSpec> {
                     j = ordered_json::object();
                     j["key"] = v->key_type;
                     j["value"] = v->value_type;
+                }
+                else if constexpr (std::is_same_v<T, std::shared_ptr<proto::VariantSpec>>) {
+                    j = ordered_json::object();
+                    j["switch"] = v->switch_on;
+                    j["cases"] = v->cases;
                 }
             },
             s);
