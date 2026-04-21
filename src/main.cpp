@@ -55,7 +55,7 @@ int main()
                     std::ranges::replace(filename, '>', '_');
                     auto file_path = path / (filename + ".json");
                     std::ofstream f(file_path);
-                    f << nlohmann::ordered_json(arg).dump(4);
+                    f << nlohmann::ordered_json(arg).dump(2);
                     if (!f) {
                         std::println(stderr, "!!! ERROR: failed to write {}", file_path.string());
                     }

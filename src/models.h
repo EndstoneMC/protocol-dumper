@@ -25,10 +25,8 @@ using Repeat = std::variant<std::uint64_t, std::string>;  // count | type
 struct ArraySpec;
 struct MapSpec;
 struct VariantSpec;
-using TypeSpec = std::variant<TypeRef,
-                              std::shared_ptr<ArraySpec>,
-                              std::shared_ptr<MapSpec>,
-                              std::shared_ptr<VariantSpec>>;
+using TypeSpec =
+    std::variant<TypeRef, std::shared_ptr<ArraySpec>, std::shared_ptr<MapSpec>, std::shared_ptr<VariantSpec>>;
 
 struct EnumField;
 struct VariantField;
@@ -229,7 +227,12 @@ struct nlohmann::adl_serializer<proto::TypeRef> {
             [&](auto &&v) {
                 using T = std::decay_t<decltype(v)>;
                 if constexpr (std::is_same_v<T, std::string>) {
-                    j = v;
+                    if (v == "cereal::NullType") {
+                        j = ordered_json();
+                    }
+                    else {
+                        j = v;
+                    }
                 }
                 else if constexpr (std::is_same_v<T, std::reference_wrapper<const proto::TypeAlias>>) {
                     j = v.get();
