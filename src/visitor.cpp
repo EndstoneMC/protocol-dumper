@@ -271,7 +271,18 @@ void Visitor::visitType(const entt::meta_type &type)
         if (!descriptor) {
             throw std::runtime_error("type member missing type descriptor");
         }
-        ty.fields.emplace_back(buildField(data));
+
+        // Special treatment for TypeWrapper<T> - unwrap and inline
+        if (data.type().is_template_specialization() &&
+            data.type().template_type() == entt::resolve<entt::meta_class_template_tag<TypeWrapper>>(meta_ctx_)) {
+            visit(data.type());
+            auto &wrapper = std::get<Type>(types_.at(data.type().id()));
+            wrapper.no_output = true;
+            ty.fields.insert(ty.fields.end(), wrapper.fields.begin(), wrapper.fields.end());
+        }
+        else {
+            ty.fields.emplace_back(buildField(data));
+        }
     }
     types_[type.id()] = std::move(ty);
 }
@@ -287,10 +298,7 @@ FieldType Visitor::buildField(const entt::meta_data &data)
     const auto traits = descriptor->mSerializationTraits;
 
     bool optional = false;
-    for (;;) {
-        if (!type.is_template_specialization()) {
-            break;
-        }
+    while (type.is_template_specialization()) {
         auto tpl = type.template_type();
         if (tpl == entt::resolve<entt::meta_class_template_tag<std::optional>>(meta_ctx_)) {
             optional = true;
@@ -369,6 +377,18 @@ TypeSpec Visitor::buildTypeSpec(entt::meta_type type, cereal::SerializationTrait
         if (tpl == entt::resolve<entt::meta_class_template_tag<std::unique_ptr>>(meta_ctx_) ||
             tpl == entt::resolve<entt::meta_class_template_tag<std::shared_ptr>>(meta_ctx_)) {
             type = type.template_arg(0);
+        }
+    }
+
+    visit(type);
+    if (auto it = types_.find(type.id()); it != types_.end() && std::holds_alternative<TypeAlias>(it->second)) {
+        for (const auto &[id, func] : type.func()) {
+            if (cereal::internal::BasicSchema::SetterDescriptor *setter = func.custom()) {
+                if (func.arity() > 0) {
+                    return buildTypeSpec(func.arg(0), traits);
+                }
+                break;
+            }
         }
     }
 

@@ -33,3 +33,6 @@ struct ReflectionCtx : private internal::ReflectionContext, Bedrock::EnableNonOw
 };
 
 }  // namespace cereal
+
+template <typename T, typename Tag>
+struct TypeWrapper : T {};
