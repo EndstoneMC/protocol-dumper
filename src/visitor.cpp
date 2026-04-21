@@ -45,8 +45,13 @@ std::string trim(std::string_view s)
     return std::string(s.substr(start, s.find_last_not_of(" \t\n\r") - start + 1));
 }
 
-std::string serialization_type(const entt::meta_type &type, cereal::SerializationTraits traits)
+std::string serialization_type(const entt::meta_ctx &ctx, const entt::meta_type &type,
+                               cereal::SerializationTraits traits)
 {
+    if (type == entt::resolve<bool>(ctx)) {
+        return std::string(type.info().name());
+    }
+
     const auto size = type.size_of();
     if (size != 1 && size != 2 && size != 4 && size != 8) {
         throw std::runtime_error(std::format("unsupported enum underlying size {} in {}", size, type.info().name()));
@@ -320,7 +325,7 @@ FieldType Visitor::buildField(const entt::meta_data &data)
         visit(type);
         f.enum_type = getTypeRef(type);
         if (!!(traits & cereal::SerializationTraits::EnumAsValue)) {
-            f.type = serialization_type(type, traits);
+            f.type = serialization_type(meta_ctx_, type, traits);
         }
         else {
             f.type = std::string("string");
@@ -452,7 +457,7 @@ TypeSpec Visitor::buildTypeSpec(entt::meta_type type, cereal::SerializationTrait
     }
 
     if (type.is_integral()) {
-        return TypeRef{serialization_type(type, traits)};
+        return TypeRef{serialization_type(meta_ctx_, type, traits)};
     }
 
     visit(type);
