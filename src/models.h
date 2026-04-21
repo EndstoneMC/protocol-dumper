@@ -59,6 +59,7 @@ struct Model {
 
 struct Type : Model<Type> {
     std::vector<FieldType> fields;
+    bool no_output = false;
 };
 
 struct Packet : Model<Packet> {

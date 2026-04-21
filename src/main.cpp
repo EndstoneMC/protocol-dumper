@@ -43,6 +43,9 @@ int main()
                         path /= "enums";
                     }
                     else {
+                        if (arg.no_output) {
+                            return;
+                        }
                         path /= "types";
                     }
                     create_directories(path);

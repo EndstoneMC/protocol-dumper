@@ -185,11 +185,12 @@ void Visitor::visitPacket(const entt::meta_type &type)
         throw std::runtime_error("invalid packet payload");
     }
     visit(read_as);
-    if (auto payload_it = types_.find(read_as.id()); payload_it != types_.end()) {
-        if (auto *payload = std::get_if<Type>(&payload_it->second)) {
-            pk.payload = *payload;
-        }
+    auto *payload = std::get_if<Type>(&types_.at(read_as.id()));
+    if (!payload) {
+        throw std::runtime_error("invalid state: packet payload is not visited");
     }
+    payload->no_output = true;
+    pk.payload = *payload;
     types_[type.id()] = std::move(pk);
 }
 
