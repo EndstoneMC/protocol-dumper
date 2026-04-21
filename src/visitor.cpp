@@ -42,77 +42,6 @@ std::string trim(std::string_view s)
     return std::string(s.substr(start, s.find_last_not_of(" \t\n\r") - start + 1));
 }
 
-std::string primitive_name(cereal::internal::ReflectedType rt, cereal::SerializationTraits traits)
-{
-    using RT = cereal::internal::ReflectedType;
-    const bool compressed = !!(traits & cereal::SerializationTraits::Compression);
-    const bool big_endian = !!(traits & cereal::SerializationTraits::BigEndian);
-
-    if (compressed) {
-        switch (rt) {
-        case RT::Int32:
-            return "varint32";
-        case RT::Uint32:
-            return "uvarint32";
-        case RT::Int64:
-            return "varint64";
-        case RT::Uint64:
-            return "uvarint64";
-        default:
-            break;
-        }
-    }
-
-    std::string name;
-    bool sized_numeric = true;
-    switch (rt) {
-    case RT::Bool:
-        name = "bool";
-        sized_numeric = false;
-        break;
-    case RT::String:
-        name = "string";
-        sized_numeric = false;
-        break;
-    case RT::Int8:
-        name = "int8";
-        break;
-    case RT::Uint8:
-        name = "uint8";
-        break;
-    case RT::Int16:
-        name = "int16";
-        break;
-    case RT::Uint16:
-        name = "uint16";
-        break;
-    case RT::Int32:
-        name = "int32";
-        break;
-    case RT::Uint32:
-        name = "uint32";
-        break;
-    case RT::Int64:
-        name = "int64";
-        break;
-    case RT::Uint64:
-        name = "uint64";
-        break;
-    case RT::Float:
-        name = "float";
-        break;
-    case RT::Double:
-        name = "double";
-        break;
-    default:
-        throw std::runtime_error(std::format("unsupported primitive reflected type: {}", static_cast<int>(rt)));
-    }
-    if (sized_numeric && big_endian) {
-        name += "_be";
-    }
-    return name;
-}
-
 }  // namespace
 
 Visitor::Visitor(const cereal::ReflectionCtx &ctx) : reflection_ctx_(ctx), meta_ctx_(ctx.internal().mMetaCtx)
@@ -288,58 +217,6 @@ void Visitor::visitEnum(const entt::meta_type &type)
     types_[type.id()] = std::move(en);
 }
 
-template <>
-Field Visitor::visitMember<Field>(std::string_view name, const cereal::internal::Member &member)
-{
-    Field f;
-    f.name = name;
-    f.deprecated = member.mDeprecated;
-    if (member.mDescription) {
-        f.description = trim(*member.mDescription);
-    }
-
-    entt::meta_type type = entt::resolve(meta_ctx_, member.mId);
-    if (type) {
-        visit(type);
-        std::visit(
-            [&f](auto &&arg) {
-                using T = std::decay_t<decltype(arg)>;
-                if constexpr (std::is_same_v<T, Packet>) {
-                    throw std::runtime_error("field can not have packet as type");
-                }
-                else {
-                    f.type = arg;
-                }
-            },
-            types_.at(type.id()));
-    }
-    else if (member.mType) {
-        f.type = primitive_name(*member.mType, member.mSerializationTraits.value_or(cereal::SerializationTraits::None));
-    }
-    else {
-        std::println("!Warning: {} has neither id nor reflected type, fall back to {}", name,
-                     member.mName.value_or(std::string(name)));
-    }
-
-    return f;
-}
-
-template <>
-MapField Visitor::visitMember<MapField>(std::string_view name, const cereal::internal::Member &member)
-{
-    MapField f;
-    f.name = name;
-    return f;
-}
-
-template <>
-ArrayField Visitor::visitMember<ArrayField>(std::string_view name, const cereal::internal::Member &member)
-{
-    ArrayField f;
-    f.name = name;
-    return f;
-}
-
 void Visitor::visitType(const entt::meta_type &type)
 {
     if (isVisited(type)) {
@@ -349,49 +226,130 @@ void Visitor::visitType(const entt::meta_type &type)
     // std::println("Type: {}", type.info().name());
     Type ty;
     ty.name = sanitise_typename(type);
-    // if (desc.mMembers) {
-    //     if (std::ranges::size(desc.mMembers.value()) != std::ranges::size(type.data())) {
-    //         throw std::runtime_error(std::format("{} has {} members, expected {}", type.info().name(),
-    //                                              std::ranges::size(desc.mMembers.value()),
-    //                                              std::ranges::size(type.data())));
-    //     }
-    //
-    //     std::println("Type: {}", type.info().name());
-    //     for (const auto &data : type.data()) {
-    //         std::println("Data: {} - {}", data.second.name(), data.second.type().info().name());
-    //     }
-    //     auto &members = desc.mMembers.value();
-    //     std::map<int, FieldType> ordered;
-    //     for (auto &[name, member] : members) {
-    //         if (!member.mOrdinalIndex) {
-    //             throw std::runtime_error(std::format("{} has no ordinal index", name));
-    //         }
-    //         if (ordered.contains(*member.mOrdinalIndex)) {
-    //             throw std::runtime_error(std::format("{} has duplicate ordinal index", name));
-    //         }
-    //         auto index = member.mOrdinalIndex.value();
-    //         auto rt = member.mType.value_or(cereal::internal::ReflectedType::Null);
-    //         if (rt == cereal::internal::ReflectedType::AssociativeContainer) {
-    //             ordered[index] = visitMember<MapField>(name, member);
-    //         }
-    //         else if (rt == cereal::internal::ReflectedType::SequenceContainer) {
-    //             ordered[index] = visitMember<MapField>(name, member);
-    //         }
-    //         else {
-    //             ordered[index] = visitMember<Field>(name, member);
-    //         }
-    //     }
-    //     ty.fields.reserve(ordered.size());
-    //     for (const auto &field : ordered | std::views::values) {
-    //         ty.fields.emplace_back(std::move(field));
-    //     }
-    // }
+    auto members = type.data();
+    ty.fields.reserve(std::ranges::size(members));
+    for (const auto &[id, data] : type.data()) {
+        cereal::internal::BasicSchema::MemberDescriptor *descriptor = data.custom();
+        if (!descriptor) {
+            throw std::runtime_error("type member missing type descriptor");
+        }
+        ty.fields.emplace_back(buildField(data));
+    }
     types_[type.id()] = std::move(ty);
+}
+
+FieldType Visitor::buildField(const entt::meta_data &data)
+{
+    cereal::internal::BasicSchema::MemberDescriptor *descriptor = data.custom();
+    if (!descriptor) {
+        throw std::runtime_error("type member missing type descriptor");
+    }
+
+    auto type = data.type();
+    if (type.is_sequence_container()) {
+        ArrayField f;
+        f.name = descriptor->mName;
+        auto instance = type.construct();
+        if (!instance) {
+            throw std::runtime_error(std::format("cannot introspect non-default-constructible sequence {} in {}",
+                                                 type.info().name(), descriptor->mName));
+        }
+        auto element_type = instance.as_sequence_container().value_type();
+        if (!element_type) {
+            throw std::runtime_error(
+                std::format("Invalid array element type in {} ({})", descriptor->mName, type.info().name()));
+        }
+        visit(element_type);
+        f.element_type = getTypeRef(element_type);
+        return f;
+    }
+
+    if (type.is_associative_container()) {
+        MapField f;
+        f.name = descriptor->mName;
+        auto instance = type.construct();
+        if (!instance) {
+            throw std::runtime_error(std::format("cannot introspect non-default-constructible associative {} in {}",
+                                                 type.info().name(), descriptor->mName));
+        }
+        auto key_type = instance.as_associative_container().key_type();
+        if (!key_type) {
+            throw std::runtime_error(
+                std::format("Invalid map key type in {} ({})", descriptor->mName, type.info().name()));
+        }
+        visit(key_type);
+        auto value_type = instance.as_associative_container().mapped_type();
+        if (!value_type) {
+            throw std::runtime_error(
+                std::format("Invalid map value type in {} ({})", descriptor->mName, type.info().name()));
+        }
+        visit(value_type);
+        f.key_type = getTypeRef(key_type);
+        f.value_type = getTypeRef(value_type);
+        return f;
+    }
+
+    if (type.is_enum()) {
+        EnumField f;
+        f.name = descriptor->mName;
+        visit(type);
+        f.enum_type = getTypeRef(type);
+        auto wire = entt::resolve<std::string>(meta_ctx_);
+        if (!!(descriptor->mSerializationTraits & cereal::SerializationTraits::EnumAsValue)) {
+            // TODO: f.type = wire format
+        }
+        return f;
+    }
+
+    if (type.is_template_specialization()) {
+        auto tpl = type.template_type();
+        if (tpl == entt::resolve<entt::meta_class_template_tag<std::variant>>(meta_ctx_)) {
+            VariantField f;
+            f.name = descriptor->mName;
+            // TODO:
+            return f;
+        }
+    }
+
+    Field f;
+    f.name = descriptor->mName;
+    if (type.is_template_specialization()) {
+        if (type.template_type() == entt::resolve<entt::meta_class_template_tag<std::optional>>(meta_ctx_)) {
+            type = type.template_arg(0);
+            f.optional = true;
+        }
+        else if (type.template_type() == entt::resolve<entt::meta_class_template_tag<std::unique_ptr>>(meta_ctx_) ||
+                 type.template_type() == entt::resolve<entt::meta_class_template_tag<std::shared_ptr>>(meta_ctx_)) {
+            type = type.template_arg(0);
+        }
+    }
+    visit(type);
+    f.type = getTypeRef(type);
+    return f;
 }
 
 bool Visitor::isVisited(const entt::meta_type &type) const
 {
     return types_.contains(type.id());
+}
+
+TypeRef Visitor::getTypeRef(const entt::meta_type &type) const
+{
+    auto it = types_.find(type.id());
+    if (it == types_.end()) {
+        return sanitise_typename(type);
+    }
+    return std::visit(
+        [&](auto &&arg) -> TypeRef {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, Packet>) {
+                throw std::runtime_error("cannot reference a packet type");
+            }
+            else {
+                return arg;
+            }
+        },
+        it->second);
 }
 
 }  // namespace proto

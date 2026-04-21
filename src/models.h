@@ -17,7 +17,7 @@ struct Enum;
 struct Field;
 struct Packet;
 struct TypeAlias;
-using TypeRef = std::variant<std::string, Type, Enum, std::reference_wrapper<TypeAlias>>;
+using TypeRef = std::variant<std::string, Type, Enum, std::reference_wrapper<const TypeAlias>>;
 
 struct EnumField;
 struct VariantField;
@@ -81,6 +81,7 @@ struct Field : FieldBase<Field> {
 };
 
 struct EnumField : FieldBase<EnumField> {
+    TypeRef type;
     TypeRef enum_type;
 };
 
@@ -182,7 +183,7 @@ struct nlohmann::adl_serializer<proto::TypeAlias> {
                 if constexpr (std::is_same_v<T, std::string>) {
                     j = v;
                 }
-                else if constexpr (std::is_same_v<T, std::reference_wrapper<proto::TypeAlias>>) {
+                else if constexpr (std::is_same_v<T, std::reference_wrapper<const proto::TypeAlias>>) {
                     j = v.get();
                 }
                 else {
@@ -203,7 +204,7 @@ struct nlohmann::adl_serializer<proto::TypeRef> {
                 if constexpr (std::is_same_v<T, std::string>) {
                     j = v;
                 }
-                else if constexpr (std::is_same_v<T, std::reference_wrapper<proto::TypeAlias>>) {
+                else if constexpr (std::is_same_v<T, std::reference_wrapper<const proto::TypeAlias>>) {
                     j = v.get();
                 }
                 else {
@@ -228,6 +229,7 @@ inline void nlohmann::adl_serializer<
                 j["type"] = arg.type;
             }
             else if constexpr (std::is_same_v<T, proto::EnumField>) {
+                j["type"] = arg.type;
                 j["enum"] = arg.enum_type;
             }
             else if constexpr (std::is_same_v<T, proto::VariantField>) {

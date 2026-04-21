@@ -24,10 +24,10 @@ private:
     void visitEnum(const entt::meta_type &type);
     void visitType(const entt::meta_type &type);
 
-    template <typename FieldType>
-    FieldType visitMember(std::string_view name, const cereal::internal::Member &member);
+    FieldType buildField(const entt::meta_data &data);
 
     [[nodiscard]] bool isVisited(const entt::meta_type &type) const;
+    [[nodiscard]] TypeRef getTypeRef(const entt::meta_type &type) const;
 
     const cereal::ReflectionCtx &reflection_ctx_;
     const entt::meta_ctx &meta_ctx_;
