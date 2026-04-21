@@ -29,9 +29,9 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: proto-dumper
+          name: protocol-dumper
           path: |
-            build/release/proto_dumper.dll
+            build/release/protocol_dumper.dll
             build/release/injector.exe
 
   release:
@@ -45,11 +45,11 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: proto-dumper
+          name: protocol-dumper
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            build/release/proto_dumper.dll
+            build/release/protocol_dumper.dll
             build/release/injector.exe

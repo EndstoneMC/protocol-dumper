@@ -1,4 +1,4 @@
-# proto-dumper
+# protocol-dumper
 
 Extracts packet schemas from a running Bedrock Dedicated Server (BDS) via cereal reflection and generates JSON schema
 definitions.
@@ -285,20 +285,20 @@ Swap `clang-cl-release` for `clang-cl-relwithdebinfo` to get a build with debug 
 
 Produces:
 
-- `build/release/proto_dumper.dll` -- the injected DLL
+- `build/release/protocol_dumper.dll` -- the injected DLL
 - `build/release/injector.exe` -- the injector
 
 ## Usage
 
 ```bash
-# Default: wait for bedrock_server.exe, inject proto_dumper.dll from same directory
+# Default: wait for bedrock_server.exe, inject protocol_dumper.dll from same directory
 injector.exe
 
 # Custom process name
 injector.exe -p my_server.exe
 
 # Custom DLL path
-injector.exe -d C:\path\to\proto_dumper.dll
+injector.exe -d C:\path\to\protocol_dumper.dll
 
 # Timeout after 30 seconds waiting for process
 injector.exe -t 30

@@ -59,7 +59,7 @@ BOOL WINAPI DllMain(HINSTANCE hDll, DWORD reason, LPVOID)
         catch (const std::exception &e) {
             std::println(stderr, "!!! FATAL: {}", e.what());
         }
-        if (auto hEvent = OpenEventA(EVENT_MODIFY_STATE, FALSE, "proto_dumper_done")) {
+        if (auto hEvent = OpenEventA(EVENT_MODIFY_STATE, FALSE, "protocol_dumper_done")) {
             SetEvent(hEvent);
             CloseHandle(hEvent);
         }

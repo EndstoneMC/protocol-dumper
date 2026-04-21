@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.29)
 cmake_policy(SET CMP0135 NEW)
-project(proto_dumper LANGUAGES CXX)
+project(protocol_dumper LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -28,15 +28,15 @@ FetchContent_Declare(expected-lite
 )
 FetchContent_MakeAvailable(entt argparse json libhat expected-lite)
 
-add_library(proto_dumper SHARED
+add_library(protocol_dumper SHARED
         src/main.cpp
         src/visitor.cpp
         src/common/Packet.cpp
         src/cereal/schema/BasicSchema.cpp
 )
-target_include_directories(proto_dumper PRIVATE src)
-target_compile_definitions(proto_dumper PRIVATE nsel_CONFIG_SELECT_EXPECTED=nsel_EXPECTED_NONSTD)
-target_link_libraries(proto_dumper PRIVATE EnTT::EnTT nlohmann_json::nlohmann_json libhat::libhat expected-lite)
+target_include_directories(protocol_dumper PRIVATE src)
+target_compile_definitions(protocol_dumper PRIVATE nsel_CONFIG_SELECT_EXPECTED=nsel_EXPECTED_NONSTD)
+target_link_libraries(protocol_dumper PRIVATE EnTT::EnTT nlohmann_json::nlohmann_json libhat::libhat expected-lite)
 
 add_executable(injector src/injector.cpp)
 target_link_libraries(injector PRIVATE argparse::argparse)

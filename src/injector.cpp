@@ -81,7 +81,7 @@ static bool inject(DWORD pid, const std::filesystem::path &dll_path)
 int main(int argc, char *argv[])
 {
     argparse::ArgumentParser program("injector", "1.0");
-    program.add_description("Inject proto_dumper.dll into a running BDS process");
+    program.add_description("Inject protocol_dumper.dll into a running BDS process");
 
     program.add_argument("-p", "--process")
         .default_value(std::string("bedrock_server.exe"))
@@ -89,7 +89,7 @@ int main(int argc, char *argv[])
 
     program.add_argument("-d", "--dll")
         .default_value(std::string(""))
-        .help("path to DLL (default: proto_dumper.dll next to this exe)");
+        .help("path to DLL (default: protocol_dumper.dll next to this exe)");
 
     program.add_argument("-t", "--timeout")
         .default_value(0)
@@ -118,7 +118,7 @@ int main(int argc, char *argv[])
     if (dll_arg.empty()) {
         wchar_t exe_path[MAX_PATH];
         GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
-        dll_path = std::filesystem::path(exe_path).parent_path() / "proto_dumper.dll";
+        dll_path = std::filesystem::path(exe_path).parent_path() / "protocol_dumper.dll";
     }
     else {
         dll_path = std::filesystem::absolute(dll_arg);
@@ -147,7 +147,7 @@ int main(int argc, char *argv[])
 
     std::println("Found {} (PID {})", process_name, pid);
 
-    HANDLE hEvent = CreateEventA(nullptr, TRUE, FALSE, "proto_dumper_done");
+    HANDLE hEvent = CreateEventA(nullptr, TRUE, FALSE, "protocol_dumper_done");
 
     std::println("Injecting {}...", dll_path.filename().string());
 
