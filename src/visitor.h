@@ -21,9 +21,11 @@ private:
     void visit(const entt::meta_type &type);
     void visitPacket(const entt::meta_type &type);
     void visitTypeAlias(const entt::meta_type &type, const entt::meta_type &value);
-    void visitEnum(const entt::meta_type &type, const cereal::SchemaDescription &desc);
-    void visitType(const entt::meta_type &type, const cereal::SchemaDescription &desc);
-    Field visitField(const std::string &name, const cereal::internal::Member &member);
+    void visitEnum(const entt::meta_type &type);
+    void visitType(const entt::meta_type &type);
+
+    template <typename FieldType>
+    FieldType visitMember(std::string_view name, const cereal::internal::Member &member);
 
     [[nodiscard]] bool isVisited(const entt::meta_type &type) const;
 

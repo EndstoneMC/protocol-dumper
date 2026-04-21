@@ -164,13 +164,12 @@ void Visitor::visit(const entt::meta_type &type)
         return;
     }
 
-    auto desc = descriptor->mPtr->description(reflection_ctx_.internal(), config_);
-    if (desc.mEnumValues && !desc.mEnumValues->empty()) {
-        visitEnum(type, desc);
+    if (type.is_enum()) {
+        visitEnum(type);
         return;
     }
 
-    visitType(type, desc);
+    visitType(type);
 }
 
 void Visitor::visitPacket(const entt::meta_type &type)
@@ -234,7 +233,7 @@ void Visitor::visitTypeAlias(const entt::meta_type &type, const entt::meta_type 
         return;  // already visited
     }
 
-    std::println("TypeAlias: using {} = {}", type.info().name(), value.info().name());
+    // std::println("TypeAlias: using {} = {}", type.info().name(), value.info().name());
     visit(value);
     TypeAlias type_alias;
     type_alias.name = sanitise_typename(type);
@@ -256,7 +255,7 @@ void Visitor::visitTypeAlias(const entt::meta_type &type, const entt::meta_type 
     types_[type.id()] = std::move(type_alias);
 }
 
-void Visitor::visitEnum(const entt::meta_type &type, const cereal::SchemaDescription &desc)
+void Visitor::visitEnum(const entt::meta_type &type)
 {
     if (isVisited(type)) {
         return;  // already visited
@@ -265,45 +264,32 @@ void Visitor::visitEnum(const entt::meta_type &type, const cereal::SchemaDescrip
     // std::println("Enum: {}", type.info().name());
     Enum en;
     en.name = sanitise_typename(type);
-    if (desc.mEnumValues) {
-        en.values.reserve(desc.mEnumValues->size());
-        for (const auto &ev : *desc.mEnumValues) {
-            en.values.emplace_back(ev.mName, ev.mValue);
+    for (const auto &[id, data] : type.data()) {
+        cereal::internal::BasicSchema::MemberDescriptor *descriptor = data.custom();
+        if (!descriptor) {
+            throw std::runtime_error("enum member missing type descriptor");
+        }
+        auto name = descriptor->mOriginalEnumName;
+        auto value = data.get({});
+        if (!value) {
+            throw std::runtime_error(std::format("Invalid enum value {} in type {}", name, type.info().name()));
+        }
+        if (value.allow_cast<std::int64_t>()) {
+            en.values.emplace_back(descriptor->mOriginalEnumName, value.cast<std::int64_t>());
+        }
+        else if (value.allow_cast<std::uint64_t>()) {
+            en.values.emplace_back(descriptor->mOriginalEnumName, value.cast<std::uint64_t>());
+        }
+        else {
+            throw std::runtime_error(
+                std::format("Failed to cast enum value {} in type {} to a integer", name, type.info().name()));
         }
     }
     types_[type.id()] = std::move(en);
 }
 
-void Visitor::visitType(const entt::meta_type &type, const cereal::SchemaDescription &desc)
-{
-    if (isVisited(type)) {
-        return;  // already visited
-    }
-
-    // std::println("Type: {}", type.info().name());
-    Type ty;
-    ty.name = sanitise_typename(type);
-    if (desc.mMembers) {
-        auto &members = desc.mMembers.value();
-        std::map<int, Field> ordered;
-        for (const auto &[name, member] : members) {
-            if (!member.mOrdinalIndex) {
-                throw std::runtime_error(std::format("{} has no ordinal index", name));
-            }
-            if (ordered.contains(*member.mOrdinalIndex)) {
-                throw std::runtime_error(std::format("{} has duplicate ordinal index", name));
-            }
-            ordered[*member.mOrdinalIndex] = visitField(name, member);
-        }
-        ty.fields.reserve(ordered.size());
-        for (const auto &field : ordered | std::views::values) {
-            ty.fields.emplace_back(std::move(field));
-        }
-    }
-    types_[type.id()] = std::move(ty);
-}
-
-Field Visitor::visitField(const std::string &name, const cereal::internal::Member &member)
+template <>
+Field Visitor::visitMember<Field>(std::string_view name, const cereal::internal::Member &member)
 {
     Field f;
     f.name = name;
@@ -312,38 +298,95 @@ Field Visitor::visitField(const std::string &name, const cereal::internal::Membe
         f.description = trim(*member.mDescription);
     }
 
-    if (member.mId != 0) {
-        auto resolved = entt::resolve(meta_ctx_, member.mId);
-        if (!resolved) {
-            std::println("!Warning: {} references unresolved type id {}", name, member.mId);
-            f.type = member.mName.value_or(name);
-        }
-        else if (const auto it = types_.find(member.mId); it != types_.end()) {
-            if (auto *alias = std::get_if<TypeAlias>(&it->second)) {
-                f.type = std::ref(*alias);
-            }
-            else if (auto *user_ty = std::get_if<Type>(&it->second)) {
-                f.type = *user_ty;
-            }
-            else if (auto *en = std::get_if<Enum>(&it->second)) {
-                f.type = *en;
-            }
-            else {
-                f.type = sanitise_typename(resolved);
-            }
-        }
-        else {
-            f.type = sanitise_typename(resolved);
-        }
+    entt::meta_type type = entt::resolve(meta_ctx_, member.mId);
+    if (type) {
+        visit(type);
+        std::visit(
+            [&f](auto &&arg) {
+                using T = std::decay_t<decltype(arg)>;
+                if constexpr (std::is_same_v<T, Packet>) {
+                    throw std::runtime_error("field can not have packet as type");
+                }
+                else {
+                    f.type = arg;
+                }
+            },
+            types_.at(type.id()));
     }
     else if (member.mType) {
         f.type = primitive_name(*member.mType, member.mSerializationTraits.value_or(cereal::SerializationTraits::None));
     }
     else {
-        std::println("!Warning: {} has neither id nor reflected type", name);
+        std::println("!Warning: {} has neither id nor reflected type, fall back to {}", name,
+                     member.mName.value_or(std::string(name)));
     }
 
     return f;
+}
+
+template <>
+MapField Visitor::visitMember<MapField>(std::string_view name, const cereal::internal::Member &member)
+{
+    MapField f;
+    f.name = name;
+    return f;
+}
+
+template <>
+ArrayField Visitor::visitMember<ArrayField>(std::string_view name, const cereal::internal::Member &member)
+{
+    ArrayField f;
+    f.name = name;
+    return f;
+}
+
+void Visitor::visitType(const entt::meta_type &type)
+{
+    if (isVisited(type)) {
+        return;  // already visited
+    }
+
+    // std::println("Type: {}", type.info().name());
+    Type ty;
+    ty.name = sanitise_typename(type);
+    // if (desc.mMembers) {
+    //     if (std::ranges::size(desc.mMembers.value()) != std::ranges::size(type.data())) {
+    //         throw std::runtime_error(std::format("{} has {} members, expected {}", type.info().name(),
+    //                                              std::ranges::size(desc.mMembers.value()),
+    //                                              std::ranges::size(type.data())));
+    //     }
+    //
+    //     std::println("Type: {}", type.info().name());
+    //     for (const auto &data : type.data()) {
+    //         std::println("Data: {} - {}", data.second.name(), data.second.type().info().name());
+    //     }
+    //     auto &members = desc.mMembers.value();
+    //     std::map<int, FieldType> ordered;
+    //     for (auto &[name, member] : members) {
+    //         if (!member.mOrdinalIndex) {
+    //             throw std::runtime_error(std::format("{} has no ordinal index", name));
+    //         }
+    //         if (ordered.contains(*member.mOrdinalIndex)) {
+    //             throw std::runtime_error(std::format("{} has duplicate ordinal index", name));
+    //         }
+    //         auto index = member.mOrdinalIndex.value();
+    //         auto rt = member.mType.value_or(cereal::internal::ReflectedType::Null);
+    //         if (rt == cereal::internal::ReflectedType::AssociativeContainer) {
+    //             ordered[index] = visitMember<MapField>(name, member);
+    //         }
+    //         else if (rt == cereal::internal::ReflectedType::SequenceContainer) {
+    //             ordered[index] = visitMember<MapField>(name, member);
+    //         }
+    //         else {
+    //             ordered[index] = visitMember<Field>(name, member);
+    //         }
+    //     }
+    //     ty.fields.reserve(ordered.size());
+    //     for (const auto &field : ordered | std::views::values) {
+    //         ty.fields.emplace_back(std::move(field));
+    //     }
+    // }
+    types_[type.id()] = std::move(ty);
 }
 
 bool Visitor::isVisited(const entt::meta_type &type) const
