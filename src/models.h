@@ -53,7 +53,7 @@ struct Type : Model<Type> {
 
 struct Packet : Model<Packet> {
     int id = 0;
-    std::optional<std::string> description;
+    std::optional<std::string> notes;
     Type payload;
 };
 
@@ -239,8 +239,8 @@ struct nlohmann::adl_serializer<proto::Packet> {
     {
         j["id"] = p.id;
         j["name"] = p.name;
-        if (p.description.has_value()) {
-            j["description"] = p.description.value();
+        if (p.notes.has_value()) {
+            j["notes"] = p.notes.value();
         }
         j["fields"] = p.payload.fields;
     }

@@ -159,12 +159,11 @@ void Visitor::visitPacket(const entt::meta_type &type)
     pk.id = entt::any_cast<int>(it->second.second);
     pk.name = sanitise_typename(type);
     it = descriptor->mUserPropertiesMap.find("[cereal:packet_details]");
-    if (it == descriptor->mUserPropertiesMap.end()) {
-        throw std::runtime_error("packet without details");
-    }
-    std::string_view description = entt::any_cast<const char *>(it->second.second);
-    if (!description.empty()) {
-        pk.description = trim(description);
+    if (it != descriptor->mUserPropertiesMap.end()) {
+        std::string_view notes = entt::any_cast<const char *>(it->second.second);
+        if (!notes.empty()) {
+            pk.notes = trim(notes);
+        }
     }
 
     auto funcs = type.func();
