@@ -9,6 +9,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "cereal/schema/SchemaDescription.h"
 #include "models.h"
 
 namespace proto {
@@ -33,20 +34,6 @@ struct VariantField;
 struct ArrayField;
 struct MapField;
 using FieldType = std::variant<Field, EnumField, VariantField, ArrayField, MapField>;
-
-struct Constraints {
-    std::optional<double> minimum;
-    std::optional<double> maximum;
-    std::optional<std::uint64_t> min_length;
-    std::optional<std::uint64_t> max_length;
-    std::optional<std::uint64_t> min_items;
-    std::optional<std::uint64_t> max_items;
-    std::optional<std::string> pattern;
-    [[nodiscard]] bool empty() const
-    {
-        return !minimum && !maximum && !min_length && !max_length && !min_items && !max_items && !pattern;
-    }
-};
 
 template <typename Derived>
 struct Model {
@@ -81,7 +68,7 @@ struct TypeAlias : Model<TypeAlias> {
 template <typename Derived>
 struct FieldBase : Model<Derived> {
     std::optional<std::string> description;
-    std::optional<Constraints> constraints;
+    std::optional<cereal::internal::ConstraintDescription> constraints;
     bool optional = false;
     bool deprecated = false;
 };
@@ -134,30 +121,85 @@ struct MapField : FieldBase<MapField> {
 }  // namespace proto
 
 template <>
-struct nlohmann::adl_serializer<proto::Constraints> {
-    static void to_json(ordered_json &j, const proto::Constraints &c)
+struct nlohmann::adl_serializer<cereal::internal::ConstraintDescription> {
+    static ordered_json as_number(double v)
+    {
+        auto s = std::to_string(v);
+        if (s.find_last_not_of('0') == s.find('.')) {
+            return static_cast<std::int64_t>(v);
+        }
+        return v;
+    }
+
+    static void to_json(ordered_json &j, const cereal::internal::ConstraintDescription &c)
     {
         j = ordered_json::object();
-        if (c.minimum) {
-            j["minimum"] = *c.minimum;
+        if (c.mMultipleOf) {
+            j["multiple_of"] = as_number(*c.mMultipleOf);
         }
-        if (c.maximum) {
-            j["maximum"] = *c.maximum;
+        if (c.mMinimum) {
+            j["minimum"] = as_number(*c.mMinimum);
         }
-        if (c.min_length) {
-            j["min_length"] = *c.min_length;
+        if (c.mExclusiveMinimum) {
+            j["exclusive_minimum"] = as_number(*c.mExclusiveMinimum);
         }
-        if (c.max_length) {
-            j["max_length"] = *c.max_length;
+        if (c.mMaximum) {
+            j["maximum"] = as_number(*c.mMaximum);
         }
-        if (c.min_items) {
-            j["min_items"] = *c.min_items;
+        if (c.mExclusiveMaximum) {
+            j["exclusive_maximum"] = as_number(*c.mExclusiveMaximum);
         }
-        if (c.max_items) {
-            j["max_items"] = *c.max_items;
+        if (c.mMinLength) {
+            j["min_length"] = *c.mMinLength;
         }
-        if (c.pattern) {
-            j["pattern"] = *c.pattern;
+        if (c.mMaxLength) {
+            j["max_length"] = *c.mMaxLength;
+        }
+        if (c.mPattern) {
+            j["pattern"] = *c.mPattern;
+        }
+        if (c.mRegexFlags) {
+            j["regex_flags"] = *c.mRegexFlags;
+        }
+        if (c.mMinItems) {
+            j["min_items"] = *c.mMinItems;
+        }
+        if (c.mMaxItems) {
+            j["max_items"] = *c.mMaxItems;
+        }
+        if (c.mNoDuplicates) {
+            j["no_duplicates"] = *c.mNoDuplicates;
+        }
+        if (c.mItems) {
+            j["items"] = *c.mItems;
+        }
+        if (c.mMinProperties) {
+            j["min_properties"] = *c.mMinProperties;
+        }
+        if (c.mMaxProperties) {
+            j["max_properties"] = *c.mMaxProperties;
+        }
+        if (c.mPropertyNames) {
+            j["property_names"] = *c.mPropertyNames;
+        }
+        if (c.mAdditionalProperties) {
+            j["additional_properties"] = *c.mAdditionalProperties;
+        }
+        if (c.mEnumValues) {
+            j["enum_values"] = *c.mEnumValues;
+        }
+        if (!c.mVariantTypes.empty()) {
+            auto arr = ordered_json::array();
+            for (const auto &v : c.mVariantTypes) {
+                arr.push_back(v ? ordered_json(*v) : ordered_json());
+            }
+            j["variant_types"] = std::move(arr);
+        }
+        if (c.mCustomDescription) {
+            j["description"] = *c.mCustomDescription;
+        }
+        if (c.mNonPublicFlag) {
+            j["non_public_flag"] = *c.mNonPublicFlag;
         }
     }
 };
@@ -351,8 +393,11 @@ inline void nlohmann::adl_serializer<
             if (arg.description) {
                 j["description"] = *arg.description;
             }
-            if (arg.constraints && !arg.constraints->empty()) {
-                j["constraints"] = *arg.constraints;
+            if (arg.constraints) {
+                auto cs = ordered_json(*arg.constraints);
+                if (!cs.empty()) {
+                    j["constraints"] = std::move(cs);
+                }
             }
             if (arg.optional) {
                 j["optional"] = true;

@@ -69,7 +69,7 @@ struct ConstraintDescription {
     std::optional<std::uint64_t> mMaxProperties;
     std::shared_ptr<ConstraintDescription> mPropertyNames;
     std::shared_ptr<ConstraintDescription> mAdditionalProperties;
-    std::optional<std::vector<long>> mEnumValues;
+    std::optional<std::vector<std::int64_t>> mEnumValues;
     std::vector<std::optional<ConstraintDescription>> mVariantTypes;
     std::optional<std::string> mCustomDescription;
     std::optional<std::string> mNonPublicFlag;

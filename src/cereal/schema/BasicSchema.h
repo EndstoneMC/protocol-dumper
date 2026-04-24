@@ -12,11 +12,11 @@
 
 #include <entt/entt.hpp>
 
+#include "../Constraints.h"
 #include "SchemaDescription.h"
 
 namespace cereal {
 
-class Constraint;  // forward decl; we only hold it by unique_ptr in descriptor mirrors
 struct SchemaWriter;
 struct SchemaReader;
 

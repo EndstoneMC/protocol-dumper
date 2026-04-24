@@ -27,6 +27,7 @@ int main()
     auto &ctx = network.getPacketReflectionCtx();
 
     proto::Visitor visitor(ctx);
+    std::size_t packets = 0, enums = 0, types = 0;
     for (const auto &type : visitor.getTypes() | std::views::values) {
         std::visit(
             overloads{
@@ -38,15 +39,18 @@ int main()
                     }
                     else if constexpr (std::is_same_v<T, proto::Packet>) {
                         path /= "packets";
+                        ++packets;
                     }
                     else if constexpr (std::is_same_v<T, proto::Enum>) {
                         path /= "enums";
+                        ++enums;
                     }
                     else {
                         if (arg.no_output) {
                             return;
                         }
                         path /= "types";
+                        ++types;
                     }
                     create_directories(path);
                     auto filename = arg.name;
@@ -63,7 +67,7 @@ int main()
             },
             type);
     }
-    std::println("Dumped to {}", output_dir.string());
+    std::println("Dumped {} packets, {} enums, {} types to {}", packets, enums, types, output_dir.string());
     return 0;
 }
 

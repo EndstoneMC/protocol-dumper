@@ -318,10 +318,18 @@ FieldType Visitor::buildField(const entt::meta_data &data)
         }
     }
 
-    if (type.is_enum()) {
-        EnumField f;
+    auto init = [&](auto &f) {
         f.name = descriptor->mName;
         f.optional = optional;
+        f.deprecated = descriptor->mIsDeprecatedComponent;
+        if (descriptor->mConstraint) {
+            f.constraints = descriptor->mConstraint->doDescription(cereal::ContextArea::ALL);
+        }
+    };
+
+    if (type.is_enum()) {
+        EnumField f;
+        init(f);
         visit(type);
         f.enum_type = getTypeRef(type);
         if (!!(traits & cereal::SerializationTraits::EnumAsValue)) {
@@ -338,32 +346,28 @@ FieldType Visitor::buildField(const entt::meta_data &data)
             using T = std::decay_t<decltype(spec)>;
             if constexpr (std::is_same_v<T, std::shared_ptr<ArraySpec>>) {
                 ArrayField f;
-                f.name = descriptor->mName;
-                f.optional = optional;
+                init(f);
                 f.repeat = std::move(spec->repeat);
                 f.element_type = std::move(spec->element_type);
                 return f;
             }
             else if constexpr (std::is_same_v<T, std::shared_ptr<MapSpec>>) {
                 MapField f;
-                f.name = descriptor->mName;
-                f.optional = optional;
+                init(f);
                 f.key_type = std::move(spec->key_type);
                 f.value_type = std::move(spec->value_type);
                 return f;
             }
             else if constexpr (std::is_same_v<T, std::shared_ptr<VariantSpec>>) {
                 VariantField f;
-                f.name = descriptor->mName;
-                f.optional = optional;
+                init(f);
                 f.switch_on = std::move(spec->switch_on);
                 f.cases = std::move(spec->cases);
                 return f;
             }
             else {
                 Field f;
-                f.name = descriptor->mName;
-                f.optional = optional;
+                init(f);
                 f.type = std::forward<decltype(spec)>(spec);
                 return f;
             }
