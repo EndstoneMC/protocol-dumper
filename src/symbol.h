@@ -51,7 +51,7 @@ Return (Class::*fp_cast(Return (Class::*)(Args...) const, void *addr))(Args...) 
  * zero-arg calls are well-formed (GNU extension honoured by MSVC).
  *
  * @code
- *     auto packet = CALL_FUNCTION(addr, &MinecraftPackets::createPacket, id);
+ *     auto *instance = CALL_FUNCTION(addr, &ServiceLocator<ServerInstance>::get);
  * @endcode
  */
 #define CALL_FUNCTION(addr, fp, ...) std::invoke(fp_cast(fp, addr), ##__VA_ARGS__)

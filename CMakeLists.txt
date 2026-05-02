@@ -31,8 +31,6 @@ FetchContent_MakeAvailable(entt argparse json libhat expected-lite)
 add_library(protocol_dumper SHARED
         src/main.cpp
         src/visitor.cpp
-        src/common/Packet.cpp
-        src/cereal/schema/BasicSchema.cpp
 )
 target_include_directories(protocol_dumper PRIVATE src)
 target_compile_definitions(protocol_dumper PRIVATE nsel_CONFIG_SELECT_EXPECTED=nsel_EXPECTED_NONSTD)

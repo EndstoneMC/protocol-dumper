@@ -1,10 +1,8 @@
 #pragma once
 // Minimal ABI-compatible Packet base class for BDS.
-// Just enough to call createPacket(), getId(), and getName().
 // Layout verified against Endstone's BEDROCK_STATIC_ASSERT_SIZE checks.
 
 #include <cstdint>
-#include <memory>
 #include <string>
 #include <string_view>
 
@@ -57,9 +55,4 @@ private:
     virtual Bedrock::Result<void> _read(ReadOnlyBinaryStream &) = 0;
     const class IPacketHandlerDispatcher *mHandler;
     Compressibility mCompressible;
-};
-
-class MinecraftPackets {
-public:
-    static std::shared_ptr<Packet> createPacket(MinecraftPacketIds id);
 };
