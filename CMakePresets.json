@@ -3,29 +3,31 @@
     "cmakeMinimumRequired": { "major": 3, "minor": 29, "patch": 0 },
     "configurePresets": [
         {
-            "name": "clang-cl-base",
+            "name": "clang-base",
             "hidden": true,
             "generator": "Ninja",
             "cacheVariables": {
-                "CMAKE_C_COMPILER": "clang-cl",
-                "CMAKE_CXX_COMPILER": "clang-cl",
-                "CMAKE_LINKER_TYPE": "LLD",
-                "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL"
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++",
+                "CMAKE_CXX_FLAGS": "-stdlib=libc++",
+                "CMAKE_EXE_LINKER_FLAGS": "-stdlib=libc++ -lc++abi",
+                "CMAKE_SHARED_LINKER_FLAGS": "-stdlib=libc++ -lc++abi",
+                "CMAKE_LINKER_TYPE": "LLD"
             }
         },
         {
-            "name": "clang-cl-release",
-            "displayName": "clang-cl + lld-link (Release)",
-            "inherits": "clang-cl-base",
+            "name": "clang-release",
+            "displayName": "clang++ + libc++ + lld (Release)",
+            "inherits": "clang-base",
             "binaryDir": "${sourceDir}/build/release",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
             }
         },
         {
-            "name": "clang-cl-relwithdebinfo",
-            "displayName": "clang-cl + lld-link (RelWithDebInfo)",
-            "inherits": "clang-cl-base",
+            "name": "clang-relwithdebinfo",
+            "displayName": "clang++ + libc++ + lld (RelWithDebInfo)",
+            "inherits": "clang-base",
             "binaryDir": "${sourceDir}/build/relwithdebinfo",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "RelWithDebInfo"
@@ -33,7 +35,7 @@
         }
     ],
     "buildPresets": [
-        { "name": "clang-cl-release", "configurePreset": "clang-cl-release" },
-        { "name": "clang-cl-relwithdebinfo", "configurePreset": "clang-cl-relwithdebinfo" }
+        { "name": "clang-release", "configurePreset": "clang-release" },
+        { "name": "clang-relwithdebinfo", "configurePreset": "clang-relwithdebinfo" }
     ]
 }

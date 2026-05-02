@@ -1,4 +1,5 @@
-#include <Windows.h>
+#include <climits>
+#include <unistd.h>
 
 #include <filesystem>
 #include <fstream>
@@ -9,15 +10,17 @@
 #include "common/ServiceLocator.h"
 #include "visitor.h"
 
+namespace {
 template <class... Ts>
 struct overloads : Ts... {
     using Ts::operator()...;
 };
 
-int main()
+void dump()
 {
-    wchar_t exe_path[MAX_PATH];
-    GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
+    char exe_path[PATH_MAX];
+    auto len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+    exe_path[len > 0 ? len : 0] = '\0';
     auto exe_dir = std::filesystem::path(exe_path).parent_path();
     auto output_dir = exe_dir / "data" / "protocol";
     std::filesystem::create_directories(output_dir);
@@ -68,24 +71,15 @@ int main()
             type);
     }
     std::println("Dumped {} packets, {} enums, {} types to {}", packets, enums, types, output_dir.string());
-    return 0;
 }
 
-BOOL WINAPI DllMain(HINSTANCE hDll, DWORD reason, LPVOID)
+__attribute__((constructor)) void main()
 {
-    if (reason == DLL_PROCESS_ATTACH) {
-        DisableThreadLibraryCalls(hDll);
-        try {
-            main();
-        }
-        catch (const std::exception &e) {
-            std::println(stderr, "!!! FATAL: {}", e.what());
-        }
-        if (auto hEvent = OpenEventA(EVENT_MODIFY_STATE, FALSE, "protocol_dumper_done")) {
-            SetEvent(hEvent);
-            CloseHandle(hEvent);
-        }
-        return FALSE;
+    try {
+        dump();
     }
-    return TRUE;
+    catch (const std::exception &e) {
+        std::println(stderr, "!!! FATAL: {}", e.what());
+    }
 }
+} // namespace

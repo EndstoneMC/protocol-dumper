@@ -2,27 +2,23 @@
 
 Dumps Bedrock Dedicated Server packet schemas as JSON.
 
-`protocol_dumper.dll` is injected into a running BDS process, walks the cereal/EnTT reflection graph the server builds at startup, and writes one JSON file per packet, struct, and enum.
+`libprotocol_dumper.so` is `LD_PRELOAD`ed into BDS, walks the cereal/EnTT reflection graph the server builds at startup, and writes one JSON file per packet, struct, and enum.
 
 ## Build
 
-clang-cl + lld-link, to match the toolchain Mojang now uses for BDS preview. From a VS 2022 x64 Native Tools prompt:
+clang++ + libc++ + lld:
 
 ```
-cmake --preset clang-cl-release
-cmake --build --preset clang-cl-release
+cmake --preset clang-release
+cmake --build --preset clang-release
 ```
 
-Use `clang-cl-relwithdebinfo` for a build with debug info. Outputs `build/release/protocol_dumper.dll` and `build/release/injector.exe`.
+Use `clang-relwithdebinfo` for a build with debug info. Outputs `build/release/libprotocol_dumper.so`.
 
 ## Run
 
 ```
-injector.exe                   # waits for bedrock_server.exe, injects the sibling DLL
-injector.exe -p name.exe       # different target process
-injector.exe -d path\to.dll    # different DLL
-injector.exe -t 30             # process-wait timeout
-injector.exe --dll-timeout 10  # DLL-finish timeout (default 5s)
+LD_PRELOAD=./build/release/libprotocol_dumper.so ./bedrock_server
 ```
 
 Schemas land in `data/protocol/` next to the host executable.
@@ -44,4 +40,4 @@ Kaitai-flavoured JSON. Each field has a wire `type` plus optional modifiers (`en
 
 ## Dependencies
 
-EnTT (must match the version BDS was built against — ABI), nlohmann/json, argparse, libhat, expected-lite. All fetched via CMake FetchContent.
+EnTT (must match the version BDS was built against — ABI), nlohmann/json, libhat, expected-lite. All fetched via CMake FetchContent.
