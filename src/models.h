@@ -298,10 +298,10 @@ struct nlohmann::adl_serializer<proto::SwitchOn> {
     static void to_json(ordered_json &j, const proto::SwitchOn &s)
     {
         j = ordered_json::object();
-        j["type"] = s.type;
         if (s.name) {
             j["name"] = *s.name;
         }
+        j["type"] = s.type;
         if (s.enum_type) {
             j["enum"] = *s.enum_type;
         }
