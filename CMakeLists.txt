@@ -5,12 +5,7 @@ project(protocol_dumper LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_subdirectory(third_party/entt)
-add_subdirectory(third_party/json)
-add_subdirectory(third_party/libhat)
-add_subdirectory(third_party/expected-lite)
-add_subdirectory(third_party/funchook)
-add_subdirectory(third_party/bedrock-server)
+add_subdirectory(third_party)
 
 add_library(protocol_dumper SHARED
         src/main.cpp
@@ -24,10 +19,10 @@ find_program(PATCHELF patchelf REQUIRED)
 add_dependencies(protocol_dumper bedrock-server)
 add_custom_command(TARGET protocol_dumper POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
-                $<TARGET_FILE:protocol_dumper> ${BEDROCK_SERVER_DIR}/
-        COMMAND ${PATCHELF} --remove-needed $<TARGET_FILE_NAME:protocol_dumper> ${BEDROCK_SERVER_BIN}
-        COMMAND ${PATCHELF} --add-needed $<TARGET_FILE_NAME:protocol_dumper> ${BEDROCK_SERVER_BIN}
-        COMMAND ${PATCHELF} --set-rpath $ORIGIN ${BEDROCK_SERVER_BIN}
-        COMMENT "Injecting $<TARGET_FILE_NAME:protocol_dumper> into bedrock_server"
+                $<TARGET_FILE:protocol_dumper> $<TARGET_FILE_DIR:bedrock_server>/
+        COMMAND ${PATCHELF} --remove-needed $<TARGET_FILE_NAME:protocol_dumper> $<TARGET_FILE:bedrock_server>
+        COMMAND ${PATCHELF} --add-needed $<TARGET_FILE_NAME:protocol_dumper> $<TARGET_FILE:bedrock_server>
+        COMMAND ${PATCHELF} --set-rpath $ORIGIN $<TARGET_FILE:bedrock_server>
+        COMMENT "Injecting $<TARGET_FILE_NAME:protocol_dumper> into $<TARGET_FILE_NAME:bedrock_server>"
         VERBATIM
 )

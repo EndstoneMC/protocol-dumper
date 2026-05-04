@@ -1,0 +1,6 @@
+add_subdirectory(bedrock-server)
+add_subdirectory(entt)
+add_subdirectory(expected-lite)
+add_subdirectory(funchook)
+add_subdirectory(json)
+add_subdirectory(libhat)

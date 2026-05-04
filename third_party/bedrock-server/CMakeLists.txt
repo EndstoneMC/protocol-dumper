@@ -9,5 +9,6 @@ ExternalProject_Add(bedrock-server
         INSTALL_COMMAND ""
         EXCLUDE_FROM_ALL TRUE
 )
-set(BEDROCK_SERVER_DIR ${CMAKE_BINARY_DIR}/bedrock-server PARENT_SCOPE)
-set(BEDROCK_SERVER_BIN ${CMAKE_BINARY_DIR}/bedrock-server/bedrock_server PARENT_SCOPE)
+add_executable(bedrock_server IMPORTED GLOBAL)
+set_target_properties(bedrock_server PROPERTIES
+        IMPORTED_LOCATION ${CMAKE_BINARY_DIR}/bedrock-server/bedrock_server)
