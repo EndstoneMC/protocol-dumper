@@ -19,3 +19,15 @@ add_library(protocol_dumper SHARED
 target_include_directories(protocol_dumper PRIVATE src)
 target_compile_definitions(protocol_dumper PRIVATE nsel_CONFIG_SELECT_EXPECTED=nsel_EXPECTED_NONSTD)
 target_link_libraries(protocol_dumper PRIVATE EnTT::EnTT nlohmann_json::nlohmann_json libhat::libhat expected-lite funchook-static)
+
+find_program(PATCHELF patchelf REQUIRED)
+add_dependencies(protocol_dumper bedrock-server)
+add_custom_command(TARGET protocol_dumper POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+                $<TARGET_FILE:protocol_dumper> ${BEDROCK_SERVER_DIR}/
+        COMMAND ${PATCHELF} --remove-needed $<TARGET_FILE_NAME:protocol_dumper> ${BEDROCK_SERVER_BIN}
+        COMMAND ${PATCHELF} --add-needed $<TARGET_FILE_NAME:protocol_dumper> ${BEDROCK_SERVER_BIN}
+        COMMAND ${PATCHELF} --set-rpath $ORIGIN ${BEDROCK_SERVER_BIN}
+        COMMENT "Injecting $<TARGET_FILE_NAME:protocol_dumper> into bedrock_server"
+        VERBATIM
+)
