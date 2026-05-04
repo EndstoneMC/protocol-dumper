@@ -1,0 +1,92 @@
+name: Dump
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Bedrock preview server version, e.g. 1.26.30.26 ("latest" queries Mojang's API)
+        type: string
+        default: latest
+  schedule:
+    # Daily at 18:30 UTC - preview drops are irregular; catches new builds within a day
+    - cron: '30 18 * * *'
+
+concurrency:
+  group: dump-${{ inputs.version || 'latest' }}
+  cancel-in-progress: false
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM ${{ env.LLVM_VERSION }}
+        env:
+          LLVM_VERSION: '20'
+        run: |
+          sudo apt-get update -y -q
+          sudo apt-get install -y -q build-essential lsb-release wget software-properties-common gnupg cmake ninja-build patchelf
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh ${LLVM_VERSION}
+          sudo apt-get install -y -q libc++-${LLVM_VERSION}-dev libc++abi-${LLVM_VERSION}-dev
+          echo "/usr/lib/llvm-${LLVM_VERSION}/bin" >> "$GITHUB_PATH"
+
+      - name: Configure
+        run: cmake --preset clang-release -DBEDROCK_SERVER_VERSION=${{ inputs.version || 'latest' }}
+
+      - name: Build
+        run: cmake --build --preset clang-release
+
+      # CMake fetches BDS into build/release/bedrock-server-<version>/
+      - name: Resolve install dir
+        id: bds
+        run: |
+          dir=$(ls -d build/release/bedrock-server-* | head -n1)
+          version=${dir##*bedrock-server-}
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+
+      # tail the log for the "dump complete" line, then SIGTERM the server.
+      - name: Run dumper
+        timeout-minutes: 5
+        working-directory: ${{ steps.bds.outputs.dir }}
+        run: |
+          set -u
+          stdbuf -oL ./bedrock_server </dev/null >server.log 2>&1 &
+          pid=$!
+          deadline=$((SECONDS + 30))
+          while ! grep -q "dump complete" server.log 2>/dev/null; do
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo "::error::bedrock_server exited before dump completed"
+              tail -n 200 server.log
+              exit 1
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::timed out waiting for dump (30s)"
+              tail -n 200 server.log
+              kill "$pid" || true
+              exit 1
+            fi
+            sleep 2
+          done
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          grep "\[protocol-dumper\]" server.log || true
+
+      - name: Upload protocol artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: protocol-${{ steps.bds.outputs.version }}
+          path: ${{ steps.bds.outputs.dir }}/data/protocol
+          if-no-files-found: error
+
+      - name: Upload server log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-log-${{ steps.bds.outputs.version }}
+          path: ${{ steps.bds.outputs.dir }}/server.log
+          if-no-files-found: ignore

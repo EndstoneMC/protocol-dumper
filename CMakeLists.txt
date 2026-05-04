@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.29)
+cmake_minimum_required(VERSION 3.28)
 # CMP0135 NEW: FetchContent URL extracts get extraction-time mtimes; the OLD
 # behaviour confuses mtime-based rebuilds after a re-fetch.
 cmake_policy(SET CMP0135 NEW)
