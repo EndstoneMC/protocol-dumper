@@ -22,7 +22,18 @@ FetchContent_Declare(expected-lite
         URL https://github.com/nonstd-lite/expected-lite/archive/refs/tags/v0.10.0.tar.gz
         URL_HASH SHA256=cfe082e4ffedeeedac47763504102646a39c080599c7c1fe99299d6a1f99af92
 )
-FetchContent_MakeAvailable(entt json libhat expected-lite)
+FetchContent_Declare(funchook
+        GIT_REPOSITORY https://github.com/kubo/funchook.git
+        GIT_TAG v1.1.3
+        GIT_SHALLOW TRUE
+        GIT_SUBMODULES distorm
+)
+set(FUNCHOOK_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set(FUNCHOOK_BUILD_STATIC ON CACHE BOOL "" FORCE)
+set(FUNCHOOK_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(FUNCHOOK_INSTALL OFF CACHE BOOL "" FORCE)
+set(FUNCHOOK_DISASM "distorm" CACHE STRING "" FORCE)
+FetchContent_MakeAvailable(entt json libhat expected-lite funchook)
 
 add_library(protocol_dumper SHARED
         src/main.cpp
@@ -30,4 +41,4 @@ add_library(protocol_dumper SHARED
 )
 target_include_directories(protocol_dumper PRIVATE src)
 target_compile_definitions(protocol_dumper PRIVATE nsel_CONFIG_SELECT_EXPECTED=nsel_EXPECTED_NONSTD)
-target_link_libraries(protocol_dumper PRIVATE EnTT::EnTT nlohmann_json::nlohmann_json libhat::libhat expected-lite)
+target_link_libraries(protocol_dumper PRIVATE EnTT::EnTT nlohmann_json::nlohmann_json libhat::libhat expected-lite funchook-static)
