@@ -5,6 +5,7 @@
 #include <ranges>
 
 #include "cereal/schema/BasicSchema.h"
+#include "common/network/packet/cerealize/core/PacketSerializationHelper.h"
 
 namespace proto {
 

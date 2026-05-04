@@ -1,8 +1,15 @@
-//
-// Created by endstone on 5/4/26.
-//
+#pragma once
 
-#ifndef PROTOCOL_DUMPER_PACKETSERIALIZATIONHELPER_H
-#define PROTOCOL_DUMPER_PACKETSERIALIZATIONHELPER_H
+#include "cereal/Context.h"
 
-#endif  // PROTOCOL_DUMPER_PACKETSERIALIZATIONHELPER_H
+template <typename T, typename Tag>
+struct TypeWrapper : T {
+    TypeWrapper() = default;
+    TypeWrapper(const T &value) : T(value) {}  // NOLINT(*-explicit-constructor)
+};
+
+namespace PacketSerialization {
+constexpr auto CEREAL_PACKET_TAG = "[cereal:packet]";
+constexpr auto CEREAL_PACKET_DETAILS_PROPERTY = "[cereal:packet_details]";
+void bindPackets(cereal::ReflectionCtx &ctx);
+}  // namespace PacketSerialization

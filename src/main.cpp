@@ -1,13 +1,15 @@
-#include <climits>
 #include <unistd.h>
 
+#include <climits>
 #include <filesystem>
 #include <fstream>
 #include <print>
 
-#include "common/NetworkSystem.h"
-#include "common/Packet.h"
-#include "common/ServiceLocator.h"
+#include <funchook.h>
+#include <libhat.hpp>
+
+#include "cereal/Context.h"
+#include "common/network/packet/cerealize/core/PacketSerializationHelper.h"
 #include "visitor.h"
 
 namespace {
@@ -16,7 +18,7 @@ struct overloads : Ts... {
     using Ts::operator()...;
 };
 
-void dump()
+void dump(const cereal::ReflectionCtx &ctx)
 {
     char exe_path[PATH_MAX];
     auto len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
@@ -24,10 +26,6 @@ void dump()
     auto exe_dir = std::filesystem::path(exe_path).parent_path();
     auto output_dir = exe_dir / "data" / "protocol";
     std::filesystem::create_directories(output_dir);
-
-    auto server = ServiceLocator<ServerInstance>::get();
-    auto &network = static_cast<NetworkSystem &>(server->getNetwork());
-    auto &ctx = network.getPacketReflectionCtx();
 
     proto::Visitor visitor(ctx);
     std::size_t packets = 0, enums = 0, types = 0;
@@ -73,13 +71,49 @@ void dump()
     std::println("Dumped {} packets, {} enums, {} types to {}", packets, enums, types, output_dir.string());
 }
 
-__attribute__((constructor)) void main()
+using BindPacketsFn = void (*)(cereal::ReflectionCtx &);
+BindPacketsFn original_bindPackets = nullptr;
+
+void hooked_bindPackets(cereal::ReflectionCtx &ctx)
 {
+    original_bindPackets(ctx);
     try {
-        dump();
+        dump(ctx);
     }
     catch (const std::exception &e) {
         std::println(stderr, "!!! FATAL: {}", e.what());
     }
 }
-} // namespace
+
+void install_hook()
+{
+    auto result = hat::find_pattern(hat::compile_signature<"E8 ? ? ? ? 49 8B 55 ? 48 8B 72">(), ".text");
+    if (!result.has_result()) {
+        throw std::runtime_error("Sigscan failed: PacketSerialization::bindPackets");
+    }
+    original_bindPackets = reinterpret_cast<BindPacketsFn>(result.rel(1));
+
+    auto *hook = funchook_create();
+    if (!hook) {
+        throw std::runtime_error("funchook_create failed");
+    }
+    if (auto rc = funchook_prepare(hook, reinterpret_cast<void **>(&original_bindPackets),
+                                   reinterpret_cast<void *>(&hooked_bindPackets));
+        rc != 0) {
+        throw std::runtime_error(std::string("funchook_prepare: ") + funchook_error_message(hook));
+    }
+    if (auto rc = funchook_install(hook, 0); rc != 0) {
+        throw std::runtime_error(std::string("funchook_install: ") + funchook_error_message(hook));
+    }
+}
+
+__attribute__((constructor)) void main()
+{
+    try {
+        install_hook();
+    }
+    catch (const std::exception &e) {
+        std::println(stderr, "!!! FATAL: {}", e.what());
+    }
+}
+}  // namespace
