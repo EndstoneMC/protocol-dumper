@@ -27,10 +27,16 @@ if(BEDROCK_SERVER_VERSION STREQUAL "latest")
     if(NOT BEDROCK_SERVER_URL)
         message(FATAL_ERROR "serverBedrockPreviewLinux missing from download-links response")
     endif()
-    message(STATUS "Bedrock server (latest preview): ${BEDROCK_SERVER_URL}")
+    # Pull the resolved version out of the URL so the install dir is versioned.
+    string(REGEX MATCH "bedrock-server-([0-9.]+)\\.zip$" _ ${BEDROCK_SERVER_URL})
+    set(_resolved_version ${CMAKE_MATCH_1})
+    message(STATUS "Bedrock server (latest preview): ${_resolved_version}")
 else()
     set(BEDROCK_SERVER_URL "https://www.minecraft.net/bedrockdedicatedserver/bin-linux-preview/bedrock-server-${BEDROCK_SERVER_VERSION}.zip")
+    set(_resolved_version ${BEDROCK_SERVER_VERSION})
 endif()
+
+set(_install_dir ${CMAKE_BINARY_DIR}/bedrock-server-${_resolved_version})
 
 # minecraft.net's CDN HTTP/2-framing-errors libcurl's default UA; any browser
 # UA works. EXCLUDE_FROM_ALL keeps the 60+ MB fetch off the default build.
@@ -38,7 +44,7 @@ endif()
 ExternalProject_Add(bedrock-server
         URL ${BEDROCK_SERVER_URL}
         HTTP_HEADER "User-Agent: Mozilla/5.0"
-        SOURCE_DIR ${CMAKE_BINARY_DIR}/bedrock-server
+        SOURCE_DIR ${_install_dir}
         CONFIGURE_COMMAND ""
         BUILD_COMMAND ""
         INSTALL_COMMAND ""
@@ -46,6 +52,8 @@ ExternalProject_Add(bedrock-server
 )
 # Two-target split: the kebab one above drives the fetch (add_dependencies
 # can't target IMPORTED), the snake one exposes the path via $<TARGET_FILE:>.
+# The IMPORTED_LOCATION is versioned, so changing the version changes the
+# POST_BUILD command line and ninja re-runs the patchelf step.
 add_executable(bedrock_server IMPORTED GLOBAL)
 set_target_properties(bedrock_server PROPERTIES
-        IMPORTED_LOCATION ${CMAKE_BINARY_DIR}/bedrock-server/bedrock_server)
+        IMPORTED_LOCATION ${_install_dir}/bedrock_server)
