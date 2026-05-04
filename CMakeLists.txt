@@ -1,4 +1,6 @@
 cmake_minimum_required(VERSION 3.29)
+# CMP0135 NEW: FetchContent URL extracts get extraction-time mtimes; the OLD
+# behaviour confuses mtime-based rebuilds after a re-fetch.
 cmake_policy(SET CMP0135 NEW)
 project(protocol_dumper LANGUAGES CXX)
 
@@ -12,12 +14,20 @@ add_library(protocol_dumper SHARED
         src/visitor.cpp
 )
 target_include_directories(protocol_dumper PRIVATE src)
+# Pin expected-lite's nonstd::expected backend; the default flips to
+# std::expected on toolchains that ship it, which has different ADL.
 target_compile_definitions(protocol_dumper PRIVATE nsel_CONFIG_SELECT_EXPECTED=nsel_EXPECTED_NONSTD)
 target_link_libraries(protocol_dumper PRIVATE EnTT::EnTT nlohmann_json::nlohmann_json libhat::libhat expected-lite funchook-static)
+# Default shared-lib linking lets undefined refs slip to runtime; surface
+# them as link errors instead of LD_PRELOAD-time loader failures.
 target_link_options(protocol_dumper PRIVATE -Wl,--no-undefined)
 
 find_program(PATCHELF patchelf REQUIRED)
+# bedrock-server is EXCLUDE_FROM_ALL; we don't link it but POST_BUILD
+# rewrites its binary, so force the fetch alongside protocol_dumper.
 add_dependencies(protocol_dumper bedrock-server)
+# Drop the .so beside bedrock_server, mark it DT_NEEDED, set rpath to $ORIGIN.
+# --remove-needed first keeps re-builds idempotent (otherwise duplicates).
 add_custom_command(TARGET protocol_dumper POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
                 $<TARGET_FILE:protocol_dumper> $<TARGET_FILE_DIR:bedrock_server>/
