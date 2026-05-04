@@ -90,3 +90,37 @@ jobs:
           name: server-log-${{ steps.bds.outputs.version }}
           path: ${{ steps.bds.outputs.dir }}/server.log
           if-no-files-found: ignore
+
+      - name: Publish dump to protocol-docs
+        env:
+          VERSION: ${{ steps.bds.outputs.version }}
+          DUMP_DIR: ${{ steps.bds.outputs.dir }}
+          GH_TOKEN: ${{ secrets.PROTOCOL_DOCS_TOKEN }}
+        run: |
+          set -euo pipefail
+          IFS='.' read -r _ minor patch _ <<< "$VERSION"
+          branch="r${minor}_u$((patch / 10))"
+          echo "Publishing dump for $VERSION to EndstoneMC/protocol-docs:$branch"
+
+          repo_url="https://x-access-token:${GH_TOKEN}@github.com/EndstoneMC/protocol-docs.git"
+          work=/tmp/protocol-docs
+
+          if git ls-remote --exit-code --heads "$repo_url" "$branch" >/dev/null 2>&1; then
+            git clone --depth 1 --branch "$branch" --single-branch "$repo_url" "$work"
+            find "$work" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          else
+            git init -b "$branch" "$work"
+            git -C "$work" remote add origin "$repo_url"
+          fi
+
+          git -C "$work" config user.name "github-actions[bot]"
+          git -C "$work" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          cp -r "$DUMP_DIR/data/protocol/." "$work/"
+          git -C "$work" add -A
+          if git -C "$work" diff --cached --quiet; then
+            echo "No changes to publish"
+            exit 0
+          fi
+          git -C "$work" commit -m "Protocol dump for $VERSION"
+          git -C "$work" push -u origin "$branch"
