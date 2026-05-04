@@ -72,7 +72,9 @@ struct ConstraintDescription {
     std::optional<std::vector<std::int64_t>> mEnumValues;
     std::vector<std::optional<ConstraintDescription>> mVariantTypes;
     std::optional<std::string> mCustomDescription;
+#if BEDROCK_SERVER_VERSION_MINOR >= 26
     std::optional<std::string> mNonPublicFlag;
+#endif
 };
 
 struct EnumValue {

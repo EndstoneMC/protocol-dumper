@@ -198,9 +198,6 @@ struct nlohmann::adl_serializer<cereal::internal::ConstraintDescription> {
         if (c.mCustomDescription) {
             j["description"] = *c.mCustomDescription;
         }
-        if (c.mNonPublicFlag) {
-            j["non_public_flag"] = *c.mNonPublicFlag;
-        }
     }
 };
 

@@ -4,6 +4,8 @@
 #include <print>
 #include <ranges>
 
+#include <spdlog/spdlog.h>
+
 #include "cereal/schema/BasicSchema.h"
 #include "common/network/packet/cerealize/core/PacketSerializationHelper.h"
 
@@ -149,8 +151,7 @@ void Visitor::visitPacket(const entt::meta_type &type)
     if (isVisited(type)) {
         return;  // already visited
     }
-
-    // std::println("Packet: {}", type.info().name());
+    spdlog::debug("visitPacket: {}", type.info().name());
     const cereal::internal::BasicSchema::TypeDescriptor *descriptor = type.custom();
     if (!descriptor) {
         throw std::runtime_error("packet missing type descriptor");
@@ -186,11 +187,12 @@ void Visitor::visitPacket(const entt::meta_type &type)
             write_as = func.arg(0);
         }
     }
-    if (!read_as || read_as != write_as) {
+    // if (!read_as || read_as != write_as) {
+    if (!write_as) {
         throw std::runtime_error("invalid packet payload");
     }
-    visit(read_as);
-    auto *payload = std::get_if<Type>(&types_.at(read_as.id()));
+    visit(write_as);
+    auto *payload = std::get_if<Type>(&types_.at(write_as.id()));
     if (!payload) {
         throw std::runtime_error("invalid state: packet payload is not visited");
     }
@@ -265,8 +267,7 @@ void Visitor::visitType(const entt::meta_type &type)
     if (isVisited(type)) {
         return;  // already visited
     }
-
-    // std::println("Type: {}", type.info().name());
+    spdlog::debug("visitType: {}", type.info().name());
     Type ty;
     ty.name = sanitise_typename(type);
     auto members = type.data();

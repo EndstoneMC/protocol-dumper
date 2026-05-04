@@ -25,6 +25,9 @@ void init_logger()
 {
     auto logger = spdlog::stdout_color_mt("protocol-dumper");
     logger->set_pattern("[%n] [%^%l%$] %v");
+#ifndef NDEBUG
+    logger->set_level(spdlog::level::debug);
+#endif
     spdlog::set_default_logger(std::move(logger));
 }
 
@@ -112,7 +115,11 @@ void hooked_bindPackets(cereal::ReflectionCtx &ctx)
 void install_hook()
 {
     // search for 50 61 63 6B 65 74 20 52 65 63 65 69 76 65 72 00, then xref, the function is right above
+#if BEDROCK_SERVER_VERSION_MINOR >= 26
     auto result = hat::find_pattern(hat::compile_signature<"E8 ? ? ? ? ? 8B 55 ? 48 8B 72">(), ".text");
+#else
+    auto result = hat::find_pattern(hat::compile_signature<"E8 ? ? ? ? 48 8B 6D ? 48 89 EF">(), ".text");
+#endif
     if (!result.has_result()) {
         throw std::runtime_error("sigscan failed for PacketSerialization::bindPackets");
     }

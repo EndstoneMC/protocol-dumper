@@ -7,6 +7,8 @@ project(protocol_dumper LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(BEDROCK_SERVER_VERSION "latest" CACHE STRING "Bedrock preview server version (e.g. 1.26.30.26), or 'latest'")
+
 add_subdirectory(third_party)
 
 add_library(protocol_dumper SHARED
@@ -16,7 +18,12 @@ add_library(protocol_dumper SHARED
 target_include_directories(protocol_dumper PRIVATE src)
 # Pin expected-lite's nonstd::expected backend; the default flips to
 # std::expected on toolchains that ship it, which has different ADL.
-target_compile_definitions(protocol_dumper PRIVATE nsel_CONFIG_SELECT_EXPECTED=nsel_EXPECTED_NONSTD)
+target_compile_definitions(protocol_dumper PRIVATE
+        nsel_CONFIG_SELECT_EXPECTED=nsel_EXPECTED_NONSTD
+        BEDROCK_SERVER_VERSION_MAJOR=${BEDROCK_SERVER_VERSION_MAJOR}
+        BEDROCK_SERVER_VERSION_MINOR=${BEDROCK_SERVER_VERSION_MINOR}
+        BEDROCK_SERVER_VERSION_PATCH=${BEDROCK_SERVER_VERSION_PATCH}
+)
 target_link_libraries(protocol_dumper PRIVATE EnTT::EnTT nlohmann_json::nlohmann_json libhat::libhat expected-lite funchook-static spdlog::spdlog)
 # Default shared-lib linking lets undefined refs slip to runtime; surface
 # them as link errors instead of LD_PRELOAD-time loader failures.
@@ -30,7 +37,7 @@ add_dependencies(protocol_dumper bedrock-server)
 # --remove-needed first keeps re-builds idempotent (otherwise duplicates).
 add_custom_command(TARGET protocol_dumper POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
-                $<TARGET_FILE:protocol_dumper> $<TARGET_FILE_DIR:bedrock_server>/
+        $<TARGET_FILE:protocol_dumper> $<TARGET_FILE_DIR:bedrock_server>/
         COMMAND ${PATCHELF} --remove-needed $<TARGET_FILE_NAME:protocol_dumper> $<TARGET_FILE:bedrock_server>
         COMMAND ${PATCHELF} --add-needed $<TARGET_FILE_NAME:protocol_dumper> $<TARGET_FILE:bedrock_server>
         COMMAND ${PATCHELF} --set-rpath $ORIGIN $<TARGET_FILE:bedrock_server>

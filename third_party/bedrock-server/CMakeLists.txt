@@ -1,8 +1,5 @@
 include(ExternalProject)
 
-set(BEDROCK_SERVER_VERSION "latest" CACHE STRING
-        "Bedrock preview server version (e.g. 1.26.30.26), or 'latest' to query Mojang's API")
-
 # 'latest' resolves at configure time via Mojang's download-links endpoint;
 # a pinned version skips the API and constructs the URL directly.
 if(BEDROCK_SERVER_VERSION STREQUAL "latest")
@@ -29,14 +26,16 @@ if(BEDROCK_SERVER_VERSION STREQUAL "latest")
     endif()
     # Pull the resolved version out of the URL so the install dir is versioned.
     string(REGEX MATCH "bedrock-server-([0-9.]+)\\.zip$" _ ${BEDROCK_SERVER_URL})
-    set(_resolved_version ${CMAKE_MATCH_1})
-    message(STATUS "Bedrock server (latest preview): ${_resolved_version}")
+    set(BEDROCK_SERVER_VERSION ${CMAKE_MATCH_1})
+    message(STATUS "Bedrock server (latest preview): ${BEDROCK_SERVER_VERSION}")
 else()
     set(BEDROCK_SERVER_URL "https://www.minecraft.net/bedrockdedicatedserver/bin-linux-preview/bedrock-server-${BEDROCK_SERVER_VERSION}.zip")
-    set(_resolved_version ${BEDROCK_SERVER_VERSION})
 endif()
 
-set(_install_dir ${CMAKE_BINARY_DIR}/bedrock-server-${_resolved_version})
+string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)" _ ${BEDROCK_SERVER_VERSION})
+set(BEDROCK_SERVER_VERSION_MAJOR ${CMAKE_MATCH_1} CACHE INTERNAL "")
+set(BEDROCK_SERVER_VERSION_MINOR ${CMAKE_MATCH_2} CACHE INTERNAL "")
+set(BEDROCK_SERVER_VERSION_PATCH ${CMAKE_MATCH_3} CACHE INTERNAL "")
 
 # minecraft.net's CDN HTTP/2-framing-errors libcurl's default UA; any browser
 # UA works. EXCLUDE_FROM_ALL keeps the 60+ MB fetch off the default build.
@@ -44,7 +43,7 @@ set(_install_dir ${CMAKE_BINARY_DIR}/bedrock-server-${_resolved_version})
 ExternalProject_Add(bedrock-server
         URL ${BEDROCK_SERVER_URL}
         HTTP_HEADER "User-Agent: Mozilla/5.0"
-        SOURCE_DIR ${_install_dir}
+        SOURCE_DIR ${CMAKE_BINARY_DIR}/bedrock-server-${BEDROCK_SERVER_VERSION}
         CONFIGURE_COMMAND ""
         BUILD_COMMAND ""
         INSTALL_COMMAND ""
@@ -56,4 +55,4 @@ ExternalProject_Add(bedrock-server
 # POST_BUILD command line and ninja re-runs the patchelf step.
 add_executable(bedrock_server IMPORTED GLOBAL)
 set_target_properties(bedrock_server PROPERTIES
-        IMPORTED_LOCATION ${_install_dir}/bedrock_server)
+        IMPORTED_LOCATION ${CMAKE_BINARY_DIR}/bedrock-server-${BEDROCK_SERVER_VERSION}/bedrock_server)
