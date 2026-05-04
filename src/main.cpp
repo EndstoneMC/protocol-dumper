@@ -8,7 +8,9 @@
 #include <fstream>
 #include <libhat.hpp>
 #include <libhat_linux.hpp>
-#include <print>
+
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/spdlog.h>
 
 #include "cereal/Context.h"
 #include "common/network/packet/cerealize/core/PacketSerializationHelper.h"
@@ -20,24 +22,11 @@ struct overloads : Ts... {
     using Ts::operator()...;
 };
 
-constexpr auto LOG_TAG = "[protocol-dumper]";
-
-template <class... Args>
-void log_info(std::format_string<Args...> fmt, Args &&...args)
+void init_logger()
 {
-    std::println("{} {}", LOG_TAG, std::format(fmt, std::forward<Args>(args)...));
-}
-
-template <class... Args>
-void log_warn(std::format_string<Args...> fmt, Args &&...args)
-{
-    std::println(stderr, "{} warn: {}", LOG_TAG, std::format(fmt, std::forward<Args>(args)...));
-}
-
-template <class... Args>
-void log_error(std::format_string<Args...> fmt, Args &&...args)
-{
-    std::println(stderr, "{} error: {}", LOG_TAG, std::format(fmt, std::forward<Args>(args)...));
+    auto logger = spdlog::stdout_color_mt("protocol-dumper");
+    logger->set_pattern("[%n] [%^%l%$] %v");
+    spdlog::set_default_logger(std::move(logger));
 }
 
 void dump(const cereal::ReflectionCtx &ctx)
@@ -51,7 +40,7 @@ void dump(const cereal::ReflectionCtx &ctx)
 
     proto::Visitor visitor(ctx);
     const auto &types = visitor.getTypes();
-    log_info("dumping {} reflected types to {}", types.size(), output_dir.string());
+    spdlog::info("dumping {} reflected types to {}", types.size(), output_dir.string());
 
     const auto start = std::chrono::steady_clock::now();
     std::size_t packet_count = 0, enum_count = 0, type_count = 0, skipped = 0, write_errors = 0;
@@ -90,7 +79,7 @@ void dump(const cereal::ReflectionCtx &ctx)
                     std::ofstream f(file_path);
                     f << nlohmann::ordered_json(arg).dump(2);
                     if (!f) {
-                        log_warn("failed to write {}", file_path.string());
+                        spdlog::warn("failed to write {}", file_path.string());
                         ++write_errors;
                     }
                 },
@@ -99,10 +88,10 @@ void dump(const cereal::ReflectionCtx &ctx)
     }
     const auto elapsed =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
-    log_info("dump complete: {} packets, {} enums, {} types ({} skipped) in {} ms", packet_count, enum_count,
-             type_count, skipped, elapsed.count());
+    spdlog::info("dump complete: {} packets, {} enums, {} types ({} skipped) in {} ms", packet_count, enum_count,
+                 type_count, skipped, elapsed.count());
     if (write_errors > 0) {
-        log_warn("{} file(s) failed to write", write_errors);
+        spdlog::warn("{} file(s) failed to write", write_errors);
     }
 }
 
@@ -111,13 +100,13 @@ BindPacketsFn original_bindPackets = nullptr;
 
 void hooked_bindPackets(cereal::ReflectionCtx &ctx)
 {
-    log_info("PacketSerialization::bindPackets called, invoking original");
+    spdlog::info("PacketSerialization::bindPackets called, invoking original");
     original_bindPackets(ctx);
     try {
         dump(ctx);
     }
     catch (const std::exception &e) {
-        log_error("dump failed: {}", e.what());
+        spdlog::error("dump failed: {}", e.what());
     }
 }
 
@@ -128,7 +117,7 @@ void install_hook()
         throw std::runtime_error("sigscan failed for PacketSerialization::bindPackets");
     }
     auto *target = result.rel(1);
-    log_info("resolved PacketSerialization::bindPackets at {}", static_cast<const void *>(target));
+    spdlog::info("resolved PacketSerialization::bindPackets at {}", static_cast<const void *>(target));
     original_bindPackets = reinterpret_cast<BindPacketsFn>(target);
 
     auto *hook = funchook_create();
@@ -143,17 +132,18 @@ void install_hook()
     if (auto rc = funchook_install(hook, 0); rc != 0) {
         throw std::runtime_error(std::format("funchook_install failed: {}", funchook_error_message(hook)));
     }
-    log_info("hook armed, awaiting PacketSerialization::bindPackets");
+    spdlog::info("hook armed, awaiting PacketSerialization::bindPackets");
 }
 }  // namespace
 
 __attribute__((constructor)) void on_load()
 {
-    log_info("loaded, installing PacketSerialization::bindPackets hook");
+    init_logger();
+    spdlog::info("loaded, installing PacketSerialization::bindPackets hook");
     try {
         install_hook();
     }
     catch (const std::exception &e) {
-        log_error("hook installation failed: {}", e.what());
+        spdlog::error("hook installation failed: {}", e.what());
     }
 }
