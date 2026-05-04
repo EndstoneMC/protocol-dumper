@@ -2,7 +2,6 @@
 #include <unistd.h>
 
 #include <chrono>
-#include <climits>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -112,6 +111,7 @@ void hooked_bindPackets(cereal::ReflectionCtx &ctx)
 
 void install_hook()
 {
+    // search for 50 61 63 6B 65 74 20 52 65 63 65 69 76 65 72 00, then xref, the function is right above
     auto result = hat::find_pattern(hat::compile_signature<"E8 ? ? ? ? 49 8B 55 ? 48 8B 72">(), ".text");
     if (!result.has_result()) {
         throw std::runtime_error("sigscan failed for PacketSerialization::bindPackets");
