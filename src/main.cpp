@@ -7,6 +7,7 @@
 #include <format>
 #include <fstream>
 #include <libhat.hpp>
+#include <libhat_linux.hpp>
 #include <print>
 
 #include "cereal/Context.h"

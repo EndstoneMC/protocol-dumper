@@ -14,6 +14,7 @@ add_library(protocol_dumper SHARED
 target_include_directories(protocol_dumper PRIVATE src)
 target_compile_definitions(protocol_dumper PRIVATE nsel_CONFIG_SELECT_EXPECTED=nsel_EXPECTED_NONSTD)
 target_link_libraries(protocol_dumper PRIVATE EnTT::EnTT nlohmann_json::nlohmann_json libhat::libhat expected-lite funchook-static)
+target_link_options(protocol_dumper PRIVATE -Wl,--no-undefined)
 
 find_program(PATCHELF patchelf REQUIRED)
 add_dependencies(protocol_dumper bedrock-server)
