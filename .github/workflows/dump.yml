@@ -100,7 +100,9 @@ jobs:
           set -euo pipefail
           IFS='.' read -r _ minor patch _ <<< "$VERSION"
           branch="r${minor}_u$((patch / 10))"
-          echo "Publishing dump for $VERSION to EndstoneMC/protocol-docs:$branch"
+          network_version=$(jq -er '.fields[0].constraints.minimum' \
+            "$DUMP_DIR/data/protocol/packets/RequestNetworkSettingsPacket.json")
+          echo "Publishing dump for $VERSION to EndstoneMC/protocol-docs:$branch (network=$network_version)"
 
           repo_url="https://x-access-token:${GH_TOKEN}@github.com/EndstoneMC/protocol-docs.git"
           work=/tmp/protocol-docs
@@ -117,6 +119,13 @@ jobs:
           git -C "$work" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           cp -r "$DUMP_DIR/data/protocol/." "$work/"
+          cat > "$work/README.md" <<EOF
+          # Minecraft: Bedrock Edition Protocol Documentation ($branch)
+
+          - **Current Release:** $branch
+          - **Minecraft Version:** $VERSION
+          - **Network Version:** $network_version
+          EOF
           git -C "$work" add -A
           if git -C "$work" diff --cached --quiet; then
             echo "No changes to publish"
