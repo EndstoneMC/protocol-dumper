@@ -77,6 +77,11 @@ public:
     struct TypeDescriptor {
         std::unique_ptr<BasicSchema> mPtr;
         std::string mName;
+        // Added in 1.26.30.28
+#if BEDROCK_SERVER_VERSION_MINOR > 26 || (BEDROCK_SERVER_VERSION_MINOR == 26 && BEDROCK_SERVER_VERSION_PATCH > 30) || \
+    (BEDROCK_SERVER_VERSION_MINOR == 26 && BEDROCK_SERVER_VERSION_PATCH == 30 && BEDROCK_SERVER_VERSION_BUILD >= 28)
+        std::vector<void *> mEnumMapping;
+#endif
         UserPropertiesMap mUserPropertiesMap;
         std::string mErrorMessage;
     };

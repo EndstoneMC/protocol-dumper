@@ -23,6 +23,7 @@ target_compile_definitions(protocol_dumper PRIVATE
         BEDROCK_SERVER_VERSION_MAJOR=${BEDROCK_SERVER_VERSION_MAJOR}
         BEDROCK_SERVER_VERSION_MINOR=${BEDROCK_SERVER_VERSION_MINOR}
         BEDROCK_SERVER_VERSION_PATCH=${BEDROCK_SERVER_VERSION_PATCH}
+        BEDROCK_SERVER_VERSION_BUILD=${BEDROCK_SERVER_VERSION_BUILD}
 )
 target_link_libraries(protocol_dumper PRIVATE EnTT::EnTT nlohmann_json::nlohmann_json libhat::libhat expected-lite funchook-static spdlog::spdlog)
 # Default shared-lib linking lets undefined refs slip to runtime; surface

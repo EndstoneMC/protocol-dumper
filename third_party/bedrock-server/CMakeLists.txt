@@ -32,10 +32,11 @@ else()
     set(BEDROCK_SERVER_URL "https://www.minecraft.net/bedrockdedicatedserver/bin-linux-preview/bedrock-server-${BEDROCK_SERVER_VERSION}.zip")
 endif()
 
-string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)" _ ${BEDROCK_SERVER_VERSION})
+string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)\\.([0-9]+)" _ ${BEDROCK_SERVER_VERSION})
 set(BEDROCK_SERVER_VERSION_MAJOR ${CMAKE_MATCH_1} CACHE INTERNAL "")
 set(BEDROCK_SERVER_VERSION_MINOR ${CMAKE_MATCH_2} CACHE INTERNAL "")
 set(BEDROCK_SERVER_VERSION_PATCH ${CMAKE_MATCH_3} CACHE INTERNAL "")
+set(BEDROCK_SERVER_VERSION_BUILD ${CMAKE_MATCH_4} CACHE INTERNAL "")
 
 # minecraft.net's CDN HTTP/2-framing-errors libcurl's default UA; any browser
 # UA works. EXCLUDE_FROM_ALL keeps the 60+ MB fetch off the default build.
