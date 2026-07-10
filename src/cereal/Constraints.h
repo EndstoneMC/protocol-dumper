@@ -6,15 +6,20 @@
 #include <entt/entt.hpp>
 
 #include "schema/SchemaDescription.h"
+#include "schema/SerializationTraits.h"
+#include "version.h"
 
 namespace cereal {
 
-class SerializerContext;  // forward decl; only appears in a signature we never call
+class SerializerContext;
 
 namespace internal {
 
 struct InputConstraint {
     std::size_t mMaxLength;
+#if BEDROCK_SERVER_VERSION_HEX >= 0x011A1E00  // 1.26.30
+    std::size_t mMinLength;
+#endif
 };
 
 }  // namespace internal
@@ -24,9 +29,12 @@ public:
     using Description = internal::ConstraintDescription;
     using TypeInfo = entt::type_info;
 
-    // Virtual declaration order MUST match BDS so vtable slots line up.
     virtual void doValidate(const entt::meta_any &, SerializerContext &) const = 0;
     virtual Description doDescription(ContextArea) const = 0;
+#if BEDROCK_SERVER_VERSION_HEX >= 0x011A1E00  // 1.26.30
+    virtual std::size_t doMaxInputLength() const;
+    virtual std::size_t doMinInputLength() const;
+#endif
     virtual ~Constraint();
     virtual const Constraint *subConstraint(std::size_t) const;
     virtual const TypeInfo &info() const = 0;

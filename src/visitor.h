@@ -4,7 +4,6 @@
 
 #include "cereal/Context.h"
 #include "cereal/schema/BasicSchema.h"
-#include "cereal/schema/SchemaDescription.h"
 #include "models.h"
 
 namespace proto {
@@ -32,7 +31,6 @@ private:
 
     const cereal::ReflectionCtx &reflection_ctx_;
     const entt::meta_ctx &meta_ctx_;
-    cereal::DescriptionConfig config_;
     TypeMap types_;
 };
 

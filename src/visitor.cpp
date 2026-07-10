@@ -89,13 +89,7 @@ std::string repeat_type(cereal::SerializationTraits traits)
 
 }  // namespace
 
-Visitor::Visitor(const cereal::ReflectionCtx &ctx) : reflection_ctx_(ctx), meta_ctx_(ctx.internal().mMetaCtx)
-{
-    using Extra = cereal::DescriptionConfig::Extra;
-    config_.mContextArea = cereal::ContextArea::ALL;
-    config_.mExtraInfo = Extra::networkingExtraInfo | Extra::nonPublicFlag;
-    config_.mIsTopLevel = true;
-}
+Visitor::Visitor(const cereal::ReflectionCtx &ctx) : reflection_ctx_(ctx), meta_ctx_(ctx.internal().mMetaCtx) {}
 
 const Visitor::TypeMap &Visitor::getTypes() const
 {
@@ -458,8 +452,15 @@ TypeSpec Visitor::buildTypeSpec(entt::meta_type type, cereal::SerializationTrait
         auto assoc = instance.as_associative_container();
         auto key_type = assoc.key_type();
         auto value_type = assoc.mapped_type();
-        if (!key_type || !value_type) {
+        if (!key_type) {
             throw std::runtime_error(std::format("invalid map key/value type ({})", type.info().name()));
+        }
+        // Key-only container (std::set / std::unordered_set): a count-prefixed list of keys.
+        if (!value_type) {
+            auto spec = std::make_shared<ArraySpec>();
+            spec->repeat = repeat_type(traits);
+            spec->element_type = buildTypeSpec(key_type, traits);
+            return spec;
         }
         auto spec = std::make_shared<MapSpec>();
         spec->key_type = buildTypeSpec(key_type, traits);

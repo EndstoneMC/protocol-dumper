@@ -1,9 +1,9 @@
 #pragma once
 // Mirrors: src-deps/Cereal/include/Cereal/schema/BasicSchema.h
 //
-// lookup() and description() are implemented by us directly — no sigscan needed.
-// lookup() reads the schema from the entt meta_type_node's custom data.
-// description() delegates to virtual makeDescription() on the BDS-owned object.
+// Only the nested descriptor structs are consumed — read back from each entt
+// meta node's custom data. BasicSchema's own methods are never called, so the
+// class is reduced to what anchors those descriptors' layout.
 
 #include <cstdint>
 #include <memory>
@@ -13,44 +13,12 @@
 #include <entt/entt.hpp>
 
 #include "../Constraints.h"
-#include "SchemaDescription.h"
+#include "SerializationTraits.h"
+#include "version.h"
 
 namespace cereal {
 
-struct SchemaWriter;
-struct SchemaReader;
-
 namespace internal {
-
-struct ReflectionContext;
-struct LoadState;
-struct SaveState;
-
-enum class VariantPriorityLevel : uint8_t {
-    UNKNOWN = 0,
-    OTHER = 1,
-    INTEGER = 2,
-    FLOAT = 3,
-    DOUBLE = 4,
-};
-
-enum class TypeTraits : uint16_t {
-    noTraits = 0,
-    isTaggedVariant = 1,
-    hasTopLevelSetters = 2,
-    hasTaggedVariantMembers = 4,
-    hasDefaultMembers = 8,
-};
-
-enum class MemberTraits : uint16_t {
-    noTraits = 0,
-    isRequired = 1,
-    isDefaultSetter = 2,
-    isMemberLevelSetterGetter = 4,
-    isKeyedSetterGetter = 8,
-    isConstSelector = 16,
-    hasDefaultValue = 32,
-};
 
 enum class OverrideType : int {
     deprecated = 0,
@@ -74,19 +42,22 @@ public:
     // the key container, so the layout is identical to std::vector<OverrideState>.
     using OverridingSet = std::vector<OverrideState>;
 
+    // Opaque to the dumper; only its size places the fields behind it.
+    struct EnumMapping {
+        struct View {};
+        std::vector<View> mViews;
+    };
+
     struct TypeDescriptor {
         std::unique_ptr<BasicSchema> mPtr;
         std::string mName;
-        // Added in 1.26.30.28
-#if BEDROCK_SERVER_VERSION_MINOR > 26 || (BEDROCK_SERVER_VERSION_MINOR == 26 && BEDROCK_SERVER_VERSION_PATCH > 30) || \
-    (BEDROCK_SERVER_VERSION_MINOR == 26 && BEDROCK_SERVER_VERSION_PATCH == 30 && BEDROCK_SERVER_VERSION_BUILD >= 28)
-        std::vector<void *> mEnumMapping;
+#if BEDROCK_SERVER_VERSION_HEX >= 0x011A1E1C  // 1.26.30.28
+        EnumMapping mEnumMapping;
 #endif
         UserPropertiesMap mUserPropertiesMap;
         std::string mErrorMessage;
     };
 
-    // Mirrored ahead of use; consumed when the dumper starts walking tagged variants.
     struct TaggedVariantDescriptor {
         DynamicSetterArgCtor mResolve;
         std::string mTaggedName;
@@ -118,24 +89,6 @@ public:
     };
 
     virtual ~BasicSchema() = default;
-    [[nodiscard]] virtual bool isGreedy(const entt::meta_ctx &) const { return false; }
-    [[nodiscard]] virtual VariantPriorityLevel minVariantPriorityLevel(const entt::meta_ctx &) const
-    {
-        return VariantPriorityLevel::UNKNOWN;
-    }
-    static const BasicSchema &lookup(const entt::meta_ctx &ctx, entt::type_info info);
-    [[nodiscard]] SchemaDescription description(const ReflectionContext &ctx, DescriptionConfig config) const;
-
-private:
-    virtual void doLoad(SchemaReader &reader, entt::meta_any &any, const entt::meta_any &udata,
-                        const LoadState &state) const
-    {
-    }
-    virtual void doSave(SchemaWriter &writer, const entt::meta_any &any, const SaveState &state) const {}
-    virtual void unknown1() {}  // TODO: figure out the actual function signature
-    virtual void unknown2() {}
-    [[nodiscard]] virtual SchemaDescription makeDescription(const ReflectionContext &ctx,
-                                                            DescriptionConfig config) const = 0;
 };
 
 }  // namespace internal

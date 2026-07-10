@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 namespace Bedrock {
 class EnableNonOwnerReferences {
 public:

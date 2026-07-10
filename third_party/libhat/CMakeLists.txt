@@ -4,7 +4,6 @@ FetchContent_Declare(libhat
         URL_HASH SHA256=b1e9e16e804d9f9bec7ccc4df4b8a1cdd281b6ec0c1377244ab28a7944a3e13a
 )
 FetchContent_MakeAvailable(libhat)
-# libhat 0.9.0 only ships module::get_section_data for Windows; libhat_linux.hpp
-# supplies a libelf-backed Linux def, so expose the dir + libelf to consumers.
+target_compile_options(libhat PRIVATE -include algorithm)
 target_include_directories(libhat INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(libhat INTERFACE elf)

@@ -10,7 +10,6 @@
 #include <nlohmann/json.hpp>
 
 #include "cereal/schema/SchemaDescription.h"
-#include "models.h"
 
 namespace proto {
 
