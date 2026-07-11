@@ -20,6 +20,20 @@ namespace cereal {
 
 namespace internal {
 
+// entt user-defined traits on setter/getter meta-funcs (high 16 bits of the node
+// traits). isDefaultSetter marks the readAndWriteAs primary setter (the binary
+// read partner); bare alsoReadAs alternates lack it and are SkipAlsoReadAs-dropped.
+enum class MemberTraits : uint16_t {
+    noTraits = 0,
+    isRequired = 1,
+    isDefaultSetter = 2,
+    isMemberLevelSetterGetter = 4,
+    isKeyedSetterGetter = 8,
+    isConstSelector = 16,
+    hasDefaultValue = 32,
+    _entt_enum_as_bitmask = 255,
+};
+
 enum class OverrideType : int {
     deprecated = 0,
     overridden = 1,

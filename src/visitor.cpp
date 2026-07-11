@@ -87,6 +87,44 @@ std::string repeat_type(cereal::SerializationTraits traits)
     return "uvarint32";
 }
 
+bool is_default_setter(const entt::meta_func &func)
+{
+    return static_cast<std::uint16_t>(func.traits<cereal::internal::MemberTraits>()) &
+           static_cast<std::uint16_t>(cereal::internal::MemberTraits::isDefaultSetter);
+}
+
+// Binary wire representation of a cereal serialize-as type. cereal::doSave invokes
+// the getter, so the getter's return type is the write shape. Its same-typed
+// isDefaultSetter setter is the read partner (used as the fallback when no getter
+// is bound); the remaining setters are SkipAlsoReadAs read-only alternates (e.g.
+// the CSS-hex color) and never touch the binary wire. Returns a null meta_type
+// when the type binds no getter and no setter (i.e. it is not a serialize-as).
+entt::meta_type serialize_as_rep(const entt::meta_type &type)
+{
+    entt::meta_type default_setter_arg, any_setter_arg;
+    for (const auto &[id, head] : type.func()) {
+        for (auto func = head; func; func = func.next()) {
+            if (const cereal::internal::BasicSchema::GetterDescriptor *getter = func.custom()) {
+                if (func.ret()) {
+                    return func.ret();
+                }
+            }
+            else if (const cereal::internal::BasicSchema::SetterDescriptor *setter = func.custom()) {
+                if (func.arity() <= 0) {
+                    continue;
+                }
+                if (is_default_setter(func) && !default_setter_arg) {
+                    default_setter_arg = func.arg(0);
+                }
+                if (!any_setter_arg) {
+                    any_setter_arg = func.arg(0);
+                }
+            }
+        }
+    }
+    return default_setter_arg ? default_setter_arg : any_setter_arg;
+}
+
 }  // namespace
 
 Visitor::Visitor(const cereal::ReflectionCtx &ctx) : reflection_ctx_(ctx), meta_ctx_(ctx.internal().mMetaCtx) {}
@@ -118,16 +156,7 @@ void Visitor::visit(const entt::meta_type &type)
         return;
     }
 
-    entt::meta_type alias;
-    for (const auto &[id, func] : type.func()) {
-        if (cereal::internal::BasicSchema::SetterDescriptor *setter = func.custom()) {
-            if (func.arity() <= 0) {
-                throw std::runtime_error("setter must have arguments");
-            }
-            alias = func.arg(0);
-        }
-    }
-    if (alias) {
+    if (entt::meta_type alias = serialize_as_rep(type)) {
         visitTypeAlias(type, alias);
         return;
     }
@@ -386,13 +415,8 @@ TypeSpec Visitor::buildTypeSpec(entt::meta_type type, cereal::SerializationTrait
 
     visit(type);
     if (auto it = types_.find(type.id()); it != types_.end() && std::holds_alternative<TypeAlias>(it->second)) {
-        for (const auto &[id, func] : type.func()) {
-            if (cereal::internal::BasicSchema::SetterDescriptor *setter = func.custom()) {
-                if (func.arity() > 0) {
-                    return buildTypeSpec(func.arg(0), traits);
-                }
-                break;
-            }
+        if (entt::meta_type rep = serialize_as_rep(type)) {
+            return buildTypeSpec(rep, traits);
         }
     }
 
