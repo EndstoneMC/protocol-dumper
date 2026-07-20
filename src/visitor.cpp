@@ -323,7 +323,11 @@ FieldType Visitor::buildField(const entt::meta_data &data)
         throw std::runtime_error("type member missing type descriptor");
     }
 
-    auto type = data.type();
+    // A conditionally-serialized member binds a type-erased serialize thunk, so
+    // `data.type()` is that closure's signature rather than the payload type.
+    // Its `mDynamicSetterArgCtor` resolves the real setter-argument type -- the
+    // same resolver mechanism TaggedVariantDescriptor uses for its tag.
+    auto type = descriptor->mDynamicSetterArgCtor ? descriptor->mDynamicSetterArgCtor(meta_ctx_) : data.type();
     const auto traits = descriptor->mSerializationTraits;
 
     bool optional = false;
