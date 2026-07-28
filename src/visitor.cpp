@@ -81,12 +81,16 @@ std::string serialization_type(const entt::meta_ctx &ctx, const entt::meta_type 
     const bool big_endian = !!(traits & cereal::SerializationTraits::BigEndian);
     const std::string_view sign = is_signed ? "" : "u";
 
+    // A byte has nothing to compress, and cereal reaches one through SchemaWriter's own
+    // write(int8_t) / write(uint8_t) overload, which has no varint path. BDS sets the
+    // trait anyway, so honouring it here made a varint32 of InventorySource's container
+    // id -- a signed char, so every non-zero value zigzagged to the wrong bytes.
+    if (size == 1) {
+        return std::format("{}int8", sign);
+    }
     if (compression) {
         const int width = (size == 8) ? 64 : 32;
         return std::format("{}varint{}", sign, width);
-    }
-    if (size == 1) {
-        return std::format("{}int8", sign);
     }
     return std::format("{}int{}{}", sign, size * 8, big_endian ? "_be" : "");
 }
