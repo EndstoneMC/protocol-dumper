@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -99,6 +100,9 @@ public:
         std::string mErrorMessage;
         SerializationTraits mSerializationTraits;
         ContextArea mAllowedAreas;
+#if BEDROCK_SERVER_VERSION_HEX >= 0x011A1E1C  // 1.26.30.28
+        std::optional<unsigned int> mScope;
+#endif
         bool mIsDeprecatedComponent;
     };
 
