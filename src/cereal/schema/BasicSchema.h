@@ -66,7 +66,7 @@ public:
     struct TypeDescriptor {
         std::unique_ptr<BasicSchema> mPtr;
         std::string mName;
-#if BEDROCK_SERVER_VERSION_HEX >= 0x011A1E1C  // 1.26.30.28
+#if BEDROCK_SERVER_VERSION_HEX >= BEDROCK_SERVER_VERSION_ENCODE(1, 26, 30, 28)
         EnumMapping mEnumMapping;
 #endif
         UserPropertiesMap mUserPropertiesMap;
@@ -100,7 +100,7 @@ public:
         std::string mErrorMessage;
         SerializationTraits mSerializationTraits;
         ContextArea mAllowedAreas;
-#if BEDROCK_SERVER_VERSION_HEX >= 0x011A1E1C  // 1.26.30.28
+#if BEDROCK_SERVER_VERSION_HEX >= BEDROCK_SERVER_VERSION_ENCODE(1, 26, 30, 28)
         std::optional<unsigned int> mScope;
 #endif
         bool mIsDeprecatedComponent;

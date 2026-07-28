@@ -17,7 +17,7 @@ namespace internal {
 
 struct InputConstraint {
     std::size_t mMaxLength;
-#if BEDROCK_SERVER_VERSION_HEX >= 0x011A1E00  // 1.26.30
+#if BEDROCK_SERVER_VERSION_HEX >= BEDROCK_SERVER_VERSION_ENCODE(1, 26, 30, 0)
     std::size_t mMinLength;
 #endif
 };
@@ -31,7 +31,7 @@ public:
 
     virtual void doValidate(const entt::meta_any &, SerializerContext &) const = 0;
     virtual Description doDescription(ContextArea) const = 0;
-#if BEDROCK_SERVER_VERSION_HEX >= 0x011A1E00  // 1.26.30
+#if BEDROCK_SERVER_VERSION_HEX >= BEDROCK_SERVER_VERSION_ENCODE(1, 26, 30, 0)
     virtual std::size_t doMaxInputLength() const;
     virtual std::size_t doMinInputLength() const;
 #endif

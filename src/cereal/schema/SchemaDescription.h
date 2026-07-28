@@ -38,7 +38,7 @@ struct ConstraintDescription {
     std::optional<std::vector<std::int64_t>> mEnumValues;
     std::vector<std::optional<ConstraintDescription>> mVariantTypes;
     std::optional<std::string> mCustomDescription;
-#if BEDROCK_SERVER_VERSION_HEX >= 0x011A0000  // 1.26.0
+#if BEDROCK_SERVER_VERSION_HEX >= BEDROCK_SERVER_VERSION_ENCODE(1, 26, 0, 0)
     std::optional<std::string> mNonPublicFlag;
 #endif
 };
