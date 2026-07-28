@@ -48,6 +48,21 @@ std::string trim(std::string_view s)
     return std::string(s.substr(start, s.find_last_not_of(" \t\n\r") - start + 1));
 }
 
+// `is_signed` is `std::is_signed_v<Type>`, false for every enum since an enum is not
+// arithmetic, and BDS stamped that bit with its own compiled entt. Its conversion
+// helper is the only place the underlying type survives, so read an all-ones object
+// back through it: signed yields -1, unsigned 2^bits - 1. uint64 storage covers the
+// size and alignment of every underlying, and all-ones is endian-independent.
+bool underlying_is_signed(const entt::meta_type &type)
+{
+    const std::uint64_t all_ones = ~std::uint64_t{0};
+    auto probe = type.from_void(static_cast<const void *>(&all_ones));
+    if (!probe || !probe.allow_cast<double>()) {
+        throw std::runtime_error(std::format("cannot probe the sign of enum {}", type.info().name()));
+    }
+    return probe.cast<double>() < 0.0;
+}
+
 std::string serialization_type(const entt::meta_ctx &ctx, const entt::meta_type &type,
                                cereal::SerializationTraits traits)
 {
@@ -60,8 +75,7 @@ std::string serialization_type(const entt::meta_ctx &ctx, const entt::meta_type 
         throw std::runtime_error(std::format("unsupported enum underlying size {} in {}", size, type.info().name()));
     }
 
-    // Round-trip probe: int64(-1) -> enum -> int64. Unsigned underlying wraps the sign away.
-    bool is_signed = type.is_signed();
+    const bool is_signed = type.is_enum() ? underlying_is_signed(type) : type.is_signed();
 
     const bool compression = !!(traits & cereal::SerializationTraits::Compression);
     const bool big_endian = !!(traits & cereal::SerializationTraits::BigEndian);
