@@ -382,24 +382,17 @@ FieldType Visitor::buildField(const entt::meta_data &data)
         }
     };
 
-    if (type.is_enum()) {
-        EnumField f;
-        init(f);
-        visit(type);
-        f.enum_type = getTypeRef(type);
-        if (!!(traits & cereal::SerializationTraits::EnumAsValue)) {
-            f.type = serialization_type(meta_ctx_, type, traits);
-        }
-        else {
-            f.type = std::string("string");
-        }
-        return f;
-    }
-
     return std::visit(
         [&](auto &&spec) -> FieldType {
             using T = std::decay_t<decltype(spec)>;
-            if constexpr (std::is_same_v<T, std::shared_ptr<ArraySpec>>) {
+            if constexpr (std::is_same_v<T, std::shared_ptr<EnumSpec>>) {
+                EnumField f;
+                init(f);
+                f.type = std::move(spec->type);
+                f.enum_type = std::move(spec->enum_type);
+                return f;
+            }
+            else if constexpr (std::is_same_v<T, std::shared_ptr<ArraySpec>>) {
                 ArrayField f;
                 init(f);
                 f.repeat = std::move(spec->repeat);
@@ -444,6 +437,16 @@ TypeSpec Visitor::buildTypeSpec(entt::meta_type type, cereal::SerializationTrait
         }
     }
 
+    if (type.is_enum()) {
+        visit(type);
+        auto spec = std::make_shared<EnumSpec>();
+        spec->enum_type = getTypeRef(type);
+        spec->type = !!(traits & cereal::SerializationTraits::EnumAsValue)
+                         ? serialization_type(meta_ctx_, type, traits)
+                         : std::string("string");
+        return spec;
+    }
+
     visit(type);
     if (auto it = types_.find(type.id()); it != types_.end() && std::holds_alternative<TypeAlias>(it->second)) {
         if (entt::meta_type rep = serialize_as_rep(type)) {
@@ -466,12 +469,12 @@ TypeSpec Visitor::buildTypeSpec(entt::meta_type type, cereal::SerializationTrait
             }
         }
         else {
-            spec->switch_on.type = repeat_type(traits);
+            // doSavePlainVariant forces Compression on for the index write and restores the
+            // member's traits before the alternative, so the index is always a uvarint32.
+            spec->switch_on.type = "uvarint32";
         }
         for (auto i = 0; i < type.template_arity(); ++i) {
-            auto c = type.template_arg(i);
-            visit(c);
-            spec->cases.emplace_back(getTypeRef(c));
+            spec->cases.emplace_back(buildTypeSpec(type.template_arg(i), traits));
         }
         return spec;
     }

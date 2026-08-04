@@ -25,8 +25,9 @@ using Repeat = std::variant<std::uint64_t, std::string>;  // count | type
 struct ArraySpec;
 struct MapSpec;
 struct VariantSpec;
-using TypeSpec =
-    std::variant<TypeRef, std::shared_ptr<ArraySpec>, std::shared_ptr<MapSpec>, std::shared_ptr<VariantSpec>>;
+struct EnumSpec;
+using TypeSpec = std::variant<TypeRef, std::shared_ptr<ArraySpec>, std::shared_ptr<MapSpec>,
+                              std::shared_ptr<VariantSpec>, std::shared_ptr<EnumSpec>>;
 
 struct EnumField;
 struct VariantField;
@@ -90,7 +91,7 @@ struct SwitchOn {
 
 struct VariantField : FieldBase<VariantField> {
     SwitchOn switch_on;
-    std::vector<TypeRef> cases;
+    std::vector<TypeSpec> cases;
 };
 
 struct ArraySpec {
@@ -105,7 +106,12 @@ struct MapSpec {
 
 struct VariantSpec {
     SwitchOn switch_on;
-    std::vector<TypeRef> cases;
+    std::vector<TypeSpec> cases;
+};
+
+struct EnumSpec {
+    TypeRef type;
+    TypeRef enum_type;
 };
 
 struct ArrayField : FieldBase<ArrayField> {
@@ -117,6 +123,10 @@ struct MapField : FieldBase<MapField> {
     TypeSpec key_type;
     TypeSpec value_type;
 };
+
+// Assign a type spec to `j["type"]`. An object-shaped spec carries its own modifiers
+// (`enum`, `repeat`), which belong beside `type` rather than under it, so splice it in.
+void assign_type(nlohmann::ordered_json &j, const TypeSpec &s);
 
 }  // namespace proto
 
@@ -336,7 +346,7 @@ struct nlohmann::adl_serializer<proto::TypeSpec> {
                 }
                 else if constexpr (std::is_same_v<T, std::shared_ptr<proto::ArraySpec>>) {
                     j = ordered_json::object();
-                    j["type"] = v->element_type;
+                    proto::assign_type(j, v->element_type);
                     j["repeat"] = v->repeat;
                 }
                 else if constexpr (std::is_same_v<T, std::shared_ptr<proto::MapSpec>>) {
@@ -349,10 +359,27 @@ struct nlohmann::adl_serializer<proto::TypeSpec> {
                     j["switch"] = v->switch_on;
                     j["cases"] = v->cases;
                 }
+                else if constexpr (std::is_same_v<T, std::shared_ptr<proto::EnumSpec>>) {
+                    j = ordered_json::object();
+                    j["type"] = v->type;
+                    j["enum"] = v->enum_type;
+                }
             },
             s);
     }
 };
+
+inline void proto::assign_type(nlohmann::ordered_json &j, const proto::TypeSpec &s)
+{
+    auto v = nlohmann::ordered_json(s);
+    if (v.is_object() && v.contains("type")) {
+        for (auto &[key, value] : v.items()) {
+            j[key] = std::move(value);
+        }
+        return;
+    }
+    j["type"] = std::move(v);
+}
 
 inline void nlohmann::adl_serializer<
     std::variant<proto::Field, proto::EnumField, proto::VariantField, proto::ArrayField, proto::MapField>,
@@ -380,7 +407,7 @@ inline void nlohmann::adl_serializer<
                 };
             }
             else if constexpr (std::is_same_v<T, proto::ArrayField>) {
-                j["type"] = arg.element_type;
+                proto::assign_type(j, arg.element_type);
                 j["repeat"] = arg.repeat;
             }
             else if constexpr (std::is_same_v<T, proto::MapField>) {
