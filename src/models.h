@@ -124,8 +124,9 @@ struct MapField : FieldBase<MapField> {
     TypeSpec value_type;
 };
 
-// Assign a type spec to `j["type"]`. An object-shaped spec carries its own modifiers
-// (`enum`, `repeat`), which belong beside `type` rather than under it, so splice it in.
+// Assign a type spec to `j["type"]`. An enum's `enum` modifier belongs beside `type`,
+// so splice it in. Nothing else: an array spec owns `repeat`, which the parent writes
+// itself, and splicing one would drop the inner dimension.
 void assign_type(nlohmann::ordered_json &j, const TypeSpec &s);
 
 }  // namespace proto
@@ -371,14 +372,12 @@ struct nlohmann::adl_serializer<proto::TypeSpec> {
 
 inline void proto::assign_type(nlohmann::ordered_json &j, const proto::TypeSpec &s)
 {
-    auto v = nlohmann::ordered_json(s);
-    if (v.is_object() && v.contains("type")) {
-        for (auto &[key, value] : v.items()) {
-            j[key] = std::move(value);
-        }
+    if (const auto *e = std::get_if<std::shared_ptr<proto::EnumSpec>>(&s)) {
+        j["type"] = (*e)->type;
+        j["enum"] = (*e)->enum_type;
         return;
     }
-    j["type"] = std::move(v);
+    j["type"] = s;
 }
 
 inline void nlohmann::adl_serializer<
