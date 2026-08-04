@@ -68,6 +68,7 @@ template <typename Derived>
 struct FieldBase : Model<Derived> {
     std::optional<std::string> description;
     std::optional<cereal::internal::ConstraintDescription> constraints;
+    std::optional<nlohmann::ordered_json> value;
     bool optional = false;
     bool deprecated = false;
 };
@@ -361,7 +362,9 @@ inline void nlohmann::adl_serializer<
         [&](auto &&arg) {
             using T = std::decay_t<decltype(arg)>;
 
-            j["name"] = arg.name;
+            if (!arg.name.empty()) {
+                j["name"] = arg.name;
+            }
 
             if constexpr (std::is_same_v<T, proto::Field>) {
                 j["type"] = arg.type;
@@ -394,6 +397,9 @@ inline void nlohmann::adl_serializer<
                 if (!cs.empty()) {
                     j["constraints"] = std::move(cs);
                 }
+            }
+            if (arg.value) {
+                j["value"] = *arg.value;
             }
             if (arg.optional) {
                 j["optional"] = true;

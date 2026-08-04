@@ -24,6 +24,9 @@ namespace internal {
 // entt user-defined traits on setter/getter meta-funcs (high 16 bits of the node
 // traits). isDefaultSetter marks the readAndWriteAs primary setter (the binary
 // read partner); bare alsoReadAs alternates lack it and are SkipAlsoReadAs-dropped.
+// The same bits also land on meta_data nodes: isKeyedSetterGetter marks a member
+// bound through a DynamicSetterArg thunk, which GenericCompositeSchema::doSave
+// prefixes with a member-present bool.
 enum class MemberTraits : uint16_t {
     noTraits = 0,
     isRequired = 1,

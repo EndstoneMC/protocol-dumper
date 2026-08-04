@@ -319,6 +319,15 @@ void Visitor::visitType(const entt::meta_type &type)
             throw std::runtime_error("type member missing type descriptor");
         }
 
+        // cereal writes a fixed bool ahead of an isKeyedSetterGetter member.
+        if (static_cast<std::uint16_t>(data.traits<cereal::internal::MemberTraits>()) &
+            static_cast<std::uint16_t>(cereal::internal::MemberTraits::isKeyedSetterGetter)) {
+            Field marker;
+            marker.type = std::string("bool");
+            marker.value = true;
+            ty.fields.emplace_back(std::move(marker));
+        }
+
         // Special treatment for TypeWrapper<T> - unwrap and inline
         if (data.type().is_template_specialization() &&
             data.type().template_type() == entt::resolve<entt::meta_class_template_tag<TypeWrapper>>(meta_ctx_)) {
