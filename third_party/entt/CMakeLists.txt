@@ -7,6 +7,6 @@ elseif (BEDROCK_SERVER_VERSION_PATCH LESS 50)
 else ()
     # 1.26.50 picked up "meta: refine meta_data_node", which reshaped meta_data_node
     # and moved the descriptor containers behind entt::stl.
-    FetchContent_Declare(entt URL https://github.com/skypjack/entt/archive/2b9d0684e0f1cc4714258428f85fd82f7623b5af.tar.gz)
+    FetchContent_Declare(entt URL https://github.com/skypjack/entt/archive/refs/tags/v4.0.0.tar.gz)
 endif ()
 FetchContent_MakeAvailable(entt)
