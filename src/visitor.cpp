@@ -39,6 +39,18 @@ std::string sanitise_typename(const entt::meta_type &type)
     return result;
 }
 
+// entt renamed meta_type::id() to alias() mid-4.0; BDS pins differ by update.
+template <typename T>
+entt::id_type type_key(const T &type)
+{
+    if constexpr (requires { type.id(); }) {
+        return type.id();
+    }
+    else {
+        return type.alias();
+    }
+}
+
 std::string trim(std::string_view s)
 {
     auto start = s.find_first_not_of(" \t\n\r");
@@ -233,13 +245,13 @@ void Visitor::visitPacket(const entt::meta_type &type)
         throw std::runtime_error("invalid packet payload");
     }
     visit(write_as);
-    auto *payload = std::get_if<Type>(&types_.at(write_as.id()));
+    auto *payload = std::get_if<Type>(&types_.at(type_key(write_as)));
     if (!payload) {
         throw std::runtime_error("invalid state: packet payload is not visited");
     }
     payload->no_output = true;
     pk.payload = *payload;
-    types_[type.id()] = std::move(pk);
+    types_[type_key(type)] = std::move(pk);
 }
 
 void Visitor::visitTypeAlias(const entt::meta_type &type, const entt::meta_type &value)
@@ -252,8 +264,8 @@ void Visitor::visitTypeAlias(const entt::meta_type &type, const entt::meta_type 
     visit(value);
     TypeAlias type_alias;
     type_alias.name = sanitise_typename(type);
-    if (types_.contains(value.id())) {
-        auto &ty = types_.at(value.id());
+    if (types_.contains(type_key(value))) {
+        auto &ty = types_.at(type_key(value));
         if (std::holds_alternative<TypeAlias>(ty)) {
             type_alias.value = std::get<TypeAlias>(ty).value;
         }
@@ -267,7 +279,7 @@ void Visitor::visitTypeAlias(const entt::meta_type &type, const entt::meta_type 
     else {
         type_alias.value = sanitise_typename(value);
     }
-    types_[type.id()] = std::move(type_alias);
+    types_[type_key(type)] = std::move(type_alias);
 }
 
 void Visitor::visitEnum(const entt::meta_type &type)
@@ -300,7 +312,7 @@ void Visitor::visitEnum(const entt::meta_type &type)
                 std::format("Failed to cast enum value {} in type {} to a integer", name, type.info().name()));
         }
     }
-    types_[type.id()] = std::move(en);
+    types_[type_key(type)] = std::move(en);
 }
 
 void Visitor::visitType(const entt::meta_type &type)
@@ -332,7 +344,7 @@ void Visitor::visitType(const entt::meta_type &type)
         if (data.type().is_template_specialization() &&
             data.type().template_type() == entt::resolve<entt::meta_class_template_tag<TypeWrapper>>(meta_ctx_)) {
             visit(data.type());
-            auto &wrapper = std::get<Type>(types_.at(data.type().id()));
+            auto &wrapper = std::get<Type>(types_.at(type_key(data.type())));
             wrapper.no_output = true;
             ty.fields.insert(ty.fields.end(), wrapper.fields.begin(), wrapper.fields.end());
         }
@@ -340,7 +352,7 @@ void Visitor::visitType(const entt::meta_type &type)
             ty.fields.emplace_back(buildField(data));
         }
     }
-    types_[type.id()] = std::move(ty);
+    types_[type_key(type)] = std::move(ty);
 }
 
 FieldType Visitor::buildField(const entt::meta_data &data)
@@ -448,7 +460,7 @@ TypeSpec Visitor::buildTypeSpec(entt::meta_type type, cereal::SerializationTrait
     }
 
     visit(type);
-    if (auto it = types_.find(type.id()); it != types_.end() && std::holds_alternative<TypeAlias>(it->second)) {
+    if (auto it = types_.find(type_key(type)); it != types_.end() && std::holds_alternative<TypeAlias>(it->second)) {
         if (entt::meta_type rep = serialize_as_rep(type)) {
             return buildTypeSpec(rep, traits);
         }
@@ -536,12 +548,12 @@ TypeSpec Visitor::buildTypeSpec(entt::meta_type type, cereal::SerializationTrait
 
 bool Visitor::isVisited(const entt::meta_type &type) const
 {
-    return types_.contains(type.id());
+    return types_.contains(type_key(type));
 }
 
 TypeRef Visitor::getTypeRef(const entt::meta_type &type) const
 {
-    auto it = types_.find(type.id());
+    auto it = types_.find(type_key(type));
     if (it == types_.end()) {
         return sanitise_typename(type);
     }
