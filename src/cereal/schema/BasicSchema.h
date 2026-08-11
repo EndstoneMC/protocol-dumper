@@ -27,14 +27,28 @@ namespace internal {
 // The same bits also land on meta_data nodes: isKeyedSetterGetter marks a member
 // bound through a DynamicSetterArg thunk, which GenericCompositeSchema::doSave
 // prefixes with a member-present bool.
+//
+// 1.26.50.25 retired that binding in two independent steps. The thirteen members
+// that used it were rebound as ordinary isMemberLevelSetterGetter -- they gained
+// bit 4, and their meta_data node now carries the payload type directly instead
+// of the thunk signature, which is what made mDynamicSetterArgCtor removable.
+// Separately, the isKeyedSetterGetter enumerator was deleted, so every bit above
+// it shifted down one position. Both halves are visible in doSave: the branch that
+// tested `$0x8` on the traits byte is gone outright (not re-gated onto another
+// bit), while the surviving tests moved 0x20 -> 0x10 and 0x40 -> 0x20.
 enum class MemberTraits : uint16_t {
     noTraits = 0,
     isRequired = 1,
     isDefaultSetter = 2,
     isMemberLevelSetterGetter = 4,
+#if BEDROCK_SERVER_VERSION_HEX < BEDROCK_SERVER_VERSION_ENCODE(1, 26, 50, 25)
     isKeyedSetterGetter = 8,
     isConstSelector = 16,
     hasDefaultValue = 32,
+#else
+    isConstSelector = 8,
+    hasDefaultValue = 16,
+#endif
     _entt_enum_as_bitmask = 255,
 };
 
@@ -97,7 +111,9 @@ public:
         std::unique_ptr<Constraint> mConstraint;
         std::string mOriginalEnumName;
         std::string mName;
-        DynamicSetterArgCtor mDynamicSetterArgCtor;
+#if BEDROCK_SERVER_VERSION_HEX < BEDROCK_SERVER_VERSION_ENCODE(1, 26, 50, 25)
+        DynamicSetterArgCtor mDynamicSetterArgCtor;  // removed with the keyed binding
+#endif
         UserPropertiesMap mUserPropertiesMap;
         OverridingSet mOverridingTypes;
         std::string mErrorMessage;

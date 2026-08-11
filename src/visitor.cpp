@@ -331,7 +331,9 @@ void Visitor::visitType(const entt::meta_type &type)
             throw std::runtime_error("type member missing type descriptor");
         }
 
-        // cereal writes a fixed bool ahead of an isKeyedSetterGetter member.
+        // cereal writes a fixed bool ahead of an isKeyedSetterGetter member. 1.26.50.25
+        // deleted that branch from doSave outright, so the bool is no longer on the wire.
+#if BEDROCK_SERVER_VERSION_HEX < BEDROCK_SERVER_VERSION_ENCODE(1, 26, 50, 25)
         if (static_cast<std::uint16_t>(data.traits<cereal::internal::MemberTraits>()) &
             static_cast<std::uint16_t>(cereal::internal::MemberTraits::isKeyedSetterGetter)) {
             Field marker;
@@ -339,6 +341,7 @@ void Visitor::visitType(const entt::meta_type &type)
             marker.value = true;
             ty.fields.emplace_back(std::move(marker));
         }
+#endif
 
         // Special treatment for TypeWrapper<T> - unwrap and inline
         if (data.type().is_template_specialization() &&
@@ -365,8 +368,14 @@ FieldType Visitor::buildField(const entt::meta_data &data)
     // A conditionally-serialized member binds a type-erased serialize thunk, so
     // `data.type()` is that closure's signature rather than the payload type.
     // Its `mDynamicSetterArgCtor` resolves the real setter-argument type -- the
-    // same resolver mechanism TaggedVariantDescriptor uses for its tag.
+    // same resolver mechanism TaggedVariantDescriptor uses for its tag. 1.26.50.25
+    // dropped the thunk and binds the payload type on the node, so there is
+    // nothing left to resolve. (TaggedVariantDescriptor::mResolve is unaffected.)
+#if BEDROCK_SERVER_VERSION_HEX < BEDROCK_SERVER_VERSION_ENCODE(1, 26, 50, 25)
     auto type = descriptor->mDynamicSetterArgCtor ? descriptor->mDynamicSetterArgCtor(meta_ctx_) : data.type();
+#else
+    auto type = data.type();
+#endif
     const auto traits = descriptor->mSerializationTraits;
 
     bool optional = false;
