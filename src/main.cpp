@@ -115,26 +115,28 @@ void hooked_bindPackets(cereal::ReflectionCtx &ctx)
 
 void install_hook()
 {
-    // Every pattern below is anchored on the lone CALL to PacketSerialization::bindPackets. To re-cut one
-    // for a new BDS, locate that call site from scratch:
+    // Each pattern is anchored on the lone CALL to PacketSerialization::bindPackets, and only the LATEST
+    // preview build of an update is a supported target - builds within one update disagree here (the
+    // 1.26.0.24 call site matches neither pattern below; 1.26.0.29, the build we target, matches the
+    // first). To cut a pattern for a new BDS, locate that call site from scratch:
     // 1. find bytes "50 61 63 6B 65 74 20 52 65 63 65 69 76 65 72 00" = "Packet Receiver\0"; it has exactly
-    //    one rip-relative xref in .text on every version checked (1.26.0 .. 1.26.50), a `lea reg, [rip+d]`
+    //    one rip-relative xref in .text on every version checked (1.21.130 .. 1.26.50), a `lea reg, [rip+d]`
     //    inside the packet-registration function that calls bindPackets and then names the receiver
-    // 2. walk back from that lea to the call: it is the nearest preceding E8 on 1.26.10+ (13 bytes above the
-    //    lea), and the second-nearest on 1.26.0, where a `mov (%r15),%r15; mov %r15,%rdi; call` sits between
-    //    them (16 bytes above). Never assume the delta - decode both candidates and confirm by step 3.
-    // 3. confirm the E8 target IS bindPackets: it opens `53 48 89 FB` (push rbx; mov rdi,rbx - rbx holds the
-    //    ReflectionCtx&) and its whole body is a flat run of `call cerealizer<T>::bind; mov %rbx,%rdi` pairs
-    //    with nothing else - 169 pairs on 1.26.0 growing to 230 on 1.26.50.25, i.e. one per bound packet
+    // 2. walk back from that lea to the call. It is the nearest preceding E8 on the builds checked, ~13
+    //    bytes above the lea, but the shape between them is `mov r, [r2]; mov rdi, r; call getCoroutinePool`
+    //    whose register allocation churns per build, so never assume the delta - decode each candidate E8 in
+    //    the window and confirm by step 3
+    // 3. confirm the E8 target IS bindPackets: it opens `53 48 89 FB` (push rbx; mov rbx,rdi - rbx holds the
+    //    ReflectionCtx&) and its whole body is a flat run of `call cerealizer<T>::bind; mov rdi,rbx` pairs
+    //    with nothing else - 165 pairs on 1.21.130 growing to 230 on 1.26.50.25, i.e. one per bound packet.
+    //    This step is not optional: the pre-1.26 pattern still matches once in 1.26.0.29, where it resolves
+    //    a `41 57 41 56 ...` prologue that is plainly not bindPackets
     // 4. cross-check the closure: those callees are the per-packet bind functions, so they reference
     //    "[cereal:packet]" / "[cereal:packet_details]" and their own packet-name string. Any candidate whose
     //    callees reach none of those is the wrong function
-    // 5. cut the pattern starting at the E8 so .rel(1) resolves it, and verify it is unique in .text - the
-    //    1.26.0 shape below collides once binary-wide if the trailing E8 is dropped
-#if BEDROCK_SERVER_VERSION_HEX >= BEDROCK_SERVER_VERSION_ENCODE(1, 26, 10, 0)
+    // 5. cut the pattern starting at the E8 so .rel(1) resolves it, and verify it is unique in .text
+#if BEDROCK_SERVER_VERSION_HEX >= BEDROCK_SERVER_VERSION_ENCODE(1, 26, 0, 0)
     auto result = hat::find_pattern(hat::compile_signature<"E8 ? ? ? ? ? 8B 55 ? 48 8B 72">(), ".text");
-#elif BEDROCK_SERVER_VERSION_HEX >= BEDROCK_SERVER_VERSION_ENCODE(1, 26, 0, 0)
-    auto result = hat::find_pattern(hat::compile_signature<"E8 ? ? ? ? 4D 8B 3F 4C 89 FF E8">(), ".text");
 #else
     auto result = hat::find_pattern(hat::compile_signature<"E8 ? ? ? ? 48 8B 6D ? 48 89 EF">(), ".text");
 #endif
