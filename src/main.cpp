@@ -118,7 +118,9 @@ void install_hook()
     // Each pattern is anchored on the lone CALL to PacketSerialization::bindPackets, and only the LATEST
     // preview build of an update is a supported target - builds within one update disagree here (the
     // 1.26.0.24 call site matches neither pattern below; 1.26.0.29, the build we target, matches the
-    // first). To cut a pattern for a new BDS, locate that call site from scratch:
+    // first). 1.21.90.28 and older are a hard floor whatever we do here: they hold zero references to
+    // "[cereal:packet]" and their NetworkSystem ctor has no bindPackets call at all, so there is no
+    // schema graph to walk. To cut a pattern for a new BDS, locate that call site from scratch:
     // 1. find bytes "50 61 63 6B 65 74 20 52 65 63 65 69 76 65 72 00" = "Packet Receiver\0"; it has exactly
     //    one rip-relative xref in .text on every version checked (1.21.130 .. 1.26.50), a `lea reg, [rip+d]`
     //    inside the packet-registration function that calls bindPackets and then names the receiver
@@ -137,8 +139,23 @@ void install_hook()
     // 5. cut the pattern starting at the E8 so .rel(1) resolves it, and verify it is unique in .text
 #if BEDROCK_SERVER_VERSION_HEX >= BEDROCK_SERVER_VERSION_ENCODE(1, 26, 0, 0)
     auto result = hat::find_pattern(hat::compile_signature<"E8 ? ? ? ? ? 8B 55 ? 48 8B 72">(), ".text");
-#else
+#elif BEDROCK_SERVER_VERSION_HEX >= BEDROCK_SERVER_VERSION_ENCODE(1, 21, 130, 0)
     auto result = hat::find_pattern(hat::compile_signature<"E8 ? ? ? ? 48 8B 6D ? 48 89 EF">(), ".text");
+#else
+// Groundwork for dropping the floor to 1.21.100, where cereal packet binding first appears. These
+// signatures are cut and verified - each is a unique .text hit resolving a bindPackets whose leading
+// callees all reference "[cereal:packet]" - and the hook does arm and fire with them:
+//   1.21.120.x  "E8 ? ? ? ? 48 8B 5D 00 48 89 DF E8 AB"   -> bindPackets, 148 binds
+//   1.21.110.x  "E8 ? ? ? ? 49 8B 2E 48 89 EF"            -> bindPackets, 137 binds
+//   1.21.100.x  "E8 ? ? ? ? 49 8B 5D 00 48 89"            -> bindPackets, partial cereal migration
+// What still blocks them is the entt ABI, not the scan. Those builds predate two entt changes:
+// meta_type_node still carries `resolve` and `dtor` and holds `details` by shared_ptr, and basic_any
+// keeps its storage inline rather than in a basic_any_storage base. entt 182a6d5f matches both, and
+// pinning it moves the crash from Visitor::visit to Visitor::visitPacket - so the meta nodes then read
+// correctly - but the UserPropertiesMap value still comes back wrong (null resolver, empty any, and the
+// packet id nowhere in the node), so at least one more container layout is off. Note the r21_u1x
+// bedrock-headers are the Android arm64 build; the Linux server may not match them.
+#error "1.21.130 is the floor; older updates need the pre-1.21.130 entt ABI sorted out first"
 #endif
     if (!result.has_result()) {
         throw std::runtime_error("sigscan failed for PacketSerialization::bindPackets");
