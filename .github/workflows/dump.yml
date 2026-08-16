@@ -129,18 +129,19 @@ jobs:
           # update land on the same branch as the previews that led up to it. Stable outranks
           # preview there whatever the version numbers say, and within a channel only a newer
           # build publishes - so a preview cannot undo a released dump, and a re-run of an
-          # older build cannot rewind the branch.
+          # older build cannot rewind the branch. What a branch carries is read back off its
+          # own README, the only state the dump publishes.
           prev_channel=""
           prev_version=""
           if git ls-remote --exit-code --heads "$repo_url" "$branch" >/dev/null 2>&1; then
             git clone --depth 1 --branch "$branch" --single-branch "$repo_url" "$work"
-            if [ -f "$work/version.json" ]; then
-              prev_channel=$(jq -er .channel "$work/version.json")
-              prev_version=$(jq -er .version "$work/version.json")
-            elif [ -f "$work/README.md" ]; then
-              # Branches published before version.json existed are all preview dumps.
-              prev_channel=preview
-              prev_version=$(sed -n 's/^- \*\*Minecraft Version:\*\* \([^ ]*\).*/\1/p' "$work/README.md")
+            if [ -f "$work/README.md" ]; then
+              # "- **Minecraft Version:** 1.26.44.3 (stable)". Dumps published before the
+              # channel suffix existed carry no parenthetical, and are all preview.
+              line=$(sed -n 's/^- \*\*Minecraft Version:\*\* //p' "$work/README.md")
+              prev_version=${line%% *}
+              prev_channel=$(printf '%s' "$line" | sed -n 's/.*(\(.*\))$/\1/p')
+              prev_channel=${prev_channel:-preview}
             fi
             find "$work" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           else
@@ -163,10 +164,6 @@ jobs:
           git -C "$work" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           cp -r "$DUMP_DIR/data/protocol/." "$work/"
-          jq -n --arg version "$VERSION" --arg channel "$CHANNEL" \
-                --argjson network_version "$network_version" \
-                '{version: $version, channel: $channel, network_version: $network_version}' \
-            > "$work/version.json"
           cat > "$work/README.md" <<EOF
           # Minecraft: Bedrock Edition Protocol Documentation ($branch)
 
