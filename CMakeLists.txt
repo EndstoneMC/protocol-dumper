@@ -7,7 +7,9 @@ project(protocol_dumper LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(BEDROCK_SERVER_VERSION "latest" CACHE STRING "Bedrock preview server version (e.g. 1.26.30.26), or 'latest'")
+set(BEDROCK_SERVER_VERSION "latest" CACHE STRING "Bedrock server version (e.g. 1.26.30.26), or 'latest'")
+set(BEDROCK_SERVER_CHANNEL "preview" CACHE STRING "Bedrock server channel: 'preview' or 'stable'")
+set_property(CACHE BEDROCK_SERVER_CHANNEL PROPERTY STRINGS preview stable)
 
 add_subdirectory(third_party)
 

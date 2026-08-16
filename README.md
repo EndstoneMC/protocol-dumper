@@ -15,6 +15,13 @@ cmake --build --preset clang-release
 
 Use `clang-relwithdebinfo` for a build with debug info. Outputs `build/release/libprotocol_dumper.so`.
 
+The build fetches BDS itself. `BEDROCK_SERVER_CHANNEL` picks `preview` (default) or `stable`, and `BEDROCK_SERVER_VERSION` takes a four-component build or `latest` (the newest build of that channel):
+
+```
+cmake -S . -B build/stable --preset clang-release \
+  -DBEDROCK_SERVER_CHANNEL=stable -DBEDROCK_SERVER_VERSION=1.26.44.3
+```
+
 ## Run
 
 ```

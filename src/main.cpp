@@ -118,9 +118,11 @@ void install_hook()
     // Each pattern is anchored on the lone CALL to PacketSerialization::bindPackets, and only the LATEST
     // preview build of an update is a supported target - builds within one update disagree here (the
     // 1.26.0.24 call site matches neither pattern below; 1.26.0.29, the build we target, matches the
-    // first). 1.21.90.28 and older are a hard floor whatever we do here: they hold zero references to
-    // "[cereal:packet]" and their NetworkSystem ctor has no bindPackets call at all, so there is no
-    // schema graph to walk. To cut a pattern for a new BDS, locate that call site from scratch:
+    // first). Stable builds ride the pattern of the update they branched from: 1.26.43.1 and 1.26.44.3,
+    // both r/26_u4, match the 1.26 pattern once each. 1.21.90.28 and older are a hard floor whatever we
+    // do here: they hold zero references to "[cereal:packet]" and their NetworkSystem ctor has no
+    // bindPackets call at all, so there is no schema graph to walk. To cut a pattern for a new BDS,
+    // locate that call site from scratch:
     // 1. find bytes "50 61 63 6B 65 74 20 52 65 63 65 69 76 65 72 00" = "Packet Receiver\0"; it has exactly
     //    one rip-relative xref in .text on every version checked (1.21.130 .. 1.26.50), a `lea reg, [rip+d]`
     //    inside the packet-registration function that calls bindPackets and then names the receiver
