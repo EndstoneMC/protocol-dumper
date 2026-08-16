@@ -4,21 +4,34 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Bedrock preview server version, e.g. 1.26.30.26 ("latest" queries Mojang's API)
+        description: Bedrock server version, e.g. 1.26.30.26 ("latest" queries Mojang's API)
         type: string
         default: latest
+      channel:
+        description: Which channel the version belongs to
+        type: choice
+        options: [preview, stable]
+        default: preview
+      force:
+        description: Publish even if the branch already carries a newer dump
+        type: boolean
+        default: false
   schedule:
-    # Daily at 18:30 UTC - preview drops are irregular; catches new builds within a day
+    # Daily at 18:30 UTC - drops are irregular on both channels; catches new builds within a day
     - cron: '30 18 * * *'
-
-concurrency:
-  group: dump-${{ inputs.version || 'latest' }}
-  cancel-in-progress: false
 
 jobs:
   dump:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      # Scheduled runs sweep both channels; a dispatch targets the one asked for.
+      matrix:
+        channel: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.channel) || '["preview", "stable"]') }}
+    concurrency:
+      group: dump-${{ matrix.channel }}-${{ inputs.version || 'latest' }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v6
 
@@ -35,7 +48,10 @@ jobs:
           echo "/usr/lib/llvm-${LLVM_VERSION}/bin" >> "$GITHUB_PATH"
 
       - name: Configure
-        run: cmake --preset clang-release -DBEDROCK_SERVER_VERSION=${{ inputs.version || 'latest' }}
+        run: |
+          cmake --preset clang-release \
+            -DBEDROCK_SERVER_VERSION=${{ inputs.version || 'latest' }} \
+            -DBEDROCK_SERVER_CHANNEL=${{ matrix.channel }}
 
       - name: Build
         run: cmake --build --preset clang-release
@@ -79,7 +95,7 @@ jobs:
       - name: Upload protocol artifact
         uses: actions/upload-artifact@v7
         with:
-          name: protocol-${{ steps.bds.outputs.version }}
+          name: protocol-${{ matrix.channel }}-${{ steps.bds.outputs.version }}
           path: ${{ steps.bds.outputs.dir }}/data/protocol
           if-no-files-found: error
 
@@ -87,13 +103,15 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: server-log-${{ steps.bds.outputs.version }}
+          name: server-log-${{ matrix.channel }}-${{ steps.bds.outputs.version }}
           path: ${{ steps.bds.outputs.dir }}/server.log
           if-no-files-found: ignore
 
       - name: Publish dump to protocol-docs
         env:
           VERSION: ${{ steps.bds.outputs.version }}
+          CHANNEL: ${{ matrix.channel }}
+          FORCE: ${{ inputs.force || 'false' }}
           DUMP_DIR: ${{ steps.bds.outputs.dir }}
           GH_TOKEN: ${{ secrets.PROTOCOL_DOCS_TOKEN }}
         run: |
@@ -102,28 +120,58 @@ jobs:
           branch="r${minor}_u$((patch / 10))"
           network_version=$(jq -er '.fields[0].constraints.minimum' \
             "$DUMP_DIR/data/protocol/packets/RequestNetworkSettingsPacket.json")
-          echo "Publishing dump for $VERSION to EndstoneMC/protocol-docs:$branch (network=$network_version)"
+          echo "Publishing $CHANNEL dump for $VERSION to EndstoneMC/protocol-docs:$branch (network=$network_version)"
 
           repo_url="https://x-access-token:${GH_TOKEN}@github.com/EndstoneMC/protocol-docs.git"
           work=/tmp/protocol-docs
 
+          # A branch tracks one update line across both channels, so the stable builds of an
+          # update land on the same branch as the previews that led up to it. Stable outranks
+          # preview there whatever the version numbers say, and within a channel only a newer
+          # build publishes - so a preview cannot undo a released dump, and a re-run of an
+          # older build cannot rewind the branch.
+          prev_channel=""
+          prev_version=""
           if git ls-remote --exit-code --heads "$repo_url" "$branch" >/dev/null 2>&1; then
             git clone --depth 1 --branch "$branch" --single-branch "$repo_url" "$work"
+            if [ -f "$work/version.json" ]; then
+              prev_channel=$(jq -er .channel "$work/version.json")
+              prev_version=$(jq -er .version "$work/version.json")
+            elif [ -f "$work/README.md" ]; then
+              # Branches published before version.json existed are all preview dumps.
+              prev_channel=preview
+              prev_version=$(sed -n 's/^- \*\*Minecraft Version:\*\* \([^ ]*\).*/\1/p' "$work/README.md")
+            fi
             find "$work" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           else
             git init -b "$branch" "$work"
             git -C "$work" remote add origin "$repo_url"
           fi
 
+          if [ "$FORCE" != "true" ] && [ -n "$prev_version" ]; then
+            newest=$(printf '%s\n%s\n' "$VERSION" "$prev_version" | sort -V | tail -n1)
+            if [ "$prev_channel" = stable ] && [ "$CHANNEL" != stable ]; then
+              echo "::notice::$branch carries stable $prev_version; $CHANNEL $VERSION does not override it"
+              exit 0
+            elif [ "$prev_channel" = "$CHANNEL" ] && [ "$newest" != "$VERSION" ]; then
+              echo "::notice::$branch carries $prev_channel $prev_version, newer than $VERSION"
+              exit 0
+            fi
+          fi
+
           git -C "$work" config user.name "github-actions[bot]"
           git -C "$work" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           cp -r "$DUMP_DIR/data/protocol/." "$work/"
+          jq -n --arg version "$VERSION" --arg channel "$CHANNEL" \
+                --argjson network_version "$network_version" \
+                '{version: $version, channel: $channel, network_version: $network_version}' \
+            > "$work/version.json"
           cat > "$work/README.md" <<EOF
           # Minecraft: Bedrock Edition Protocol Documentation ($branch)
 
           - **Current Release:** $branch
-          - **Minecraft Version:** $VERSION
+          - **Minecraft Version:** $VERSION ($CHANNEL)
           - **Network Version:** $network_version
           EOF
           git -C "$work" add -A
@@ -131,5 +179,5 @@ jobs:
             echo "No changes to publish"
             exit 0
           fi
-          git -C "$work" commit -m "Protocol dump for $VERSION"
+          git -C "$work" commit -m "Protocol dump for $VERSION ($CHANNEL)"
           git -C "$work" push -u origin "$branch"
