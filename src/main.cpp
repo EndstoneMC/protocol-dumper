@@ -118,8 +118,9 @@ void install_hook()
     // Each pattern is anchored on the lone CALL to PacketSerialization::bindPackets, and only the LATEST
     // preview build of an update is a supported target - builds within one update disagree here (the
     // 1.26.0.24 call site matches neither pattern below; 1.26.0.29, the build we target, matches the
-    // first). Stable builds ride the pattern of the update they branched from: 1.26.43.1 and 1.26.44.3,
-    // both r/26_u4, match the 1.26 pattern once each. 1.21.90.28 and older are a hard floor whatever we
+    // first). Stable builds usually ride the pattern of the update they branched from - every 1.26 one
+    // checked does, 1.26.0.2 .. 1.26.44.3 - but not always: 1.21.132.3 matches neither 1.21.130 pattern
+    // and needs its own, below. 1.21.90.28 and older are a hard floor whatever we
     // do here: they hold zero references to "[cereal:packet]" and their NetworkSystem ctor has no
     // bindPackets call at all, so there is no schema graph to walk. To cut a pattern for a new BDS,
     // locate that call site from scratch:
@@ -141,6 +142,8 @@ void install_hook()
     // 5. cut the pattern starting at the E8 so .rel(1) resolves it, and verify it is unique in .text
 #if BEDROCK_SERVER_VERSION_HEX >= BEDROCK_SERVER_VERSION_ENCODE(1, 26, 0, 0)
     auto result = hat::find_pattern(hat::compile_signature<"E8 ? ? ? ? ? 8B 55 ? 48 8B 72">(), ".text");
+#elif BEDROCK_SERVER_VERSION_HEX >= BEDROCK_SERVER_VERSION_ENCODE(1, 21, 132, 0)
+    auto result = hat::find_pattern(hat::compile_signature<"E8 ? ? ? ? 49 8B 2E 48 89 EF">(), ".text");
 #elif BEDROCK_SERVER_VERSION_HEX >= BEDROCK_SERVER_VERSION_ENCODE(1, 21, 130, 0)
     auto result = hat::find_pattern(hat::compile_signature<"E8 ? ? ? ? 48 8B 6D ? 48 89 EF">(), ".text");
 #else
