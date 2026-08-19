@@ -32,7 +32,7 @@ Schemas land in `data/protocol/` next to the host executable.
 
 ## Schema
 
-Kaitai-flavoured JSON. Each field has a wire `type` plus optional modifiers (`enum`, `repeat`, `optional`, `deprecated`, `constraints`, `description`, `value`). Maps are `{key, value}` objects; variants are `{switch, cases}`. A field with `value` is a nameless literal on the wire, Kaitai's `valid: <literal>`.
+Kaitai-flavoured JSON. Each field has a wire `type` plus optional modifiers (`enum`, `repeat`, `optional`, `deprecated`, `constraints`, `description`, `value`). `repeat` is a number for a fixed-extent array and the length prefix's wire type for a dynamic one. Maps are `{key, value}` objects; variants are `{switch, cases}`. A field with `value` is a nameless literal on the wire, Kaitai's `valid: <literal>`.
 
 ```json
 {

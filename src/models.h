@@ -320,18 +320,7 @@ template <>
 struct nlohmann::adl_serializer<proto::Repeat> {
     static void to_json(ordered_json &j, const proto::Repeat &r)
     {
-        j = ordered_json::object();
-        std::visit(
-            [&](auto &&v) {
-                using T = std::decay_t<decltype(v)>;
-                if constexpr (std::is_same_v<T, std::uint64_t>) {
-                    j["count"] = v;
-                }
-                else if constexpr (std::is_same_v<T, std::string>) {
-                    j["prefix"] = v;
-                }
-            },
-            r);
+        std::visit([&](auto &&v) { j = v; }, r);
     }
 };
 
