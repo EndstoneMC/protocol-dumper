@@ -107,6 +107,21 @@ std::string serialization_type(const entt::meta_ctx &ctx, const entt::meta_type 
     return std::format("{}int{}{}", sign, size * 8, big_endian ? "_be" : "");
 }
 
+// A fixed-extent array of bytes stopped being an array at 1.26.50.25: cereal binds it to
+// the blob path (SchemaWriter::write(gsl::span<const unsigned char>)) instead of
+// openArray + per-element write, so a uvarint length now precedes the bytes. That path
+// takes no isDynamicExtent and ignores NoSizeCompression, so the prefix is always a
+// uvarint32 -- SubChunkPacket's 16x16 heightmap gained one byte per row.
+bool is_byte_blob([[maybe_unused]] const entt::meta_ctx &ctx, [[maybe_unused]] const entt::meta_type &element)
+{
+#if BEDROCK_SERVER_VERSION_HEX >= BEDROCK_SERVER_VERSION_ENCODE(1, 26, 50, 25)
+    return element == entt::resolve<char>(ctx) || element == entt::resolve<signed char>(ctx) ||
+           element == entt::resolve<unsigned char>(ctx);
+#else
+    return false;
+#endif
+}
+
 std::string repeat_type(cereal::SerializationTraits traits)
 {
     const bool no_size_compression = !!(traits & cereal::SerializationTraits::NoSizeCompression);
@@ -512,11 +527,14 @@ TypeSpec Visitor::buildTypeSpec(entt::meta_type type, cereal::SerializationTrait
             throw std::runtime_error(std::format("invalid array element type ({})", type.info().name()));
         }
         auto spec = std::make_shared<ArraySpec>();
-        if (const auto extent = seq.size(); extent > 0) {
-            spec->repeat = static_cast<std::uint64_t>(extent);
+        if (const auto extent = seq.size(); extent == 0) {
+            spec->repeat = repeat_type(traits);
+        }
+        else if (is_byte_blob(meta_ctx_, element_type)) {
+            spec->repeat = std::string("uvarint32");
         }
         else {
-            spec->repeat = repeat_type(traits);
+            spec->repeat = static_cast<std::uint64_t>(extent);
         }
         spec->element_type = buildTypeSpec(element_type, traits);
         return spec;
