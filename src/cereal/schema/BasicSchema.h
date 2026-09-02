@@ -80,8 +80,18 @@ public:
         std::vector<View> mViews;
     };
 
+    // Two pointer-sized slots update 6 inserted behind mPtr in both descriptors. Null in
+    // every descriptor the packet schema binds -- across all 1008 reflected types and
+    // their members -- so the dumper reads nothing from them, only steps over them.
+    struct UnboundSlots {
+        void *mSlots[2];
+    };
+
     struct TypeDescriptor {
         std::unique_ptr<BasicSchema> mPtr;
+#if BEDROCK_SERVER_VERSION_HEX >= BEDROCK_SERVER_VERSION_ENCODE(1, 26, 60, 0)
+        UnboundSlots mUnboundSlots;
+#endif
         std::string mName;
 #if BEDROCK_SERVER_VERSION_HEX >= BEDROCK_SERVER_VERSION_ENCODE(1, 26, 30, 28)
         EnumMapping mEnumMapping;
@@ -108,6 +118,9 @@ public:
 
     struct MemberDescriptor {
         std::unique_ptr<BasicSchema> mPtr;
+#if BEDROCK_SERVER_VERSION_HEX >= BEDROCK_SERVER_VERSION_ENCODE(1, 26, 60, 0)
+        UnboundSlots mUnboundSlots;
+#endif
         std::unique_ptr<Constraint> mConstraint;
         std::string mOriginalEnumName;
         std::string mName;
