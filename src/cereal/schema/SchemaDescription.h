@@ -19,11 +19,6 @@ namespace internal {
 
 struct ConstraintDescription {
 #if BEDROCK_SERVER_VERSION_HEX >= BEDROCK_SERVER_VERSION_ENCODE(1, 26, 60, 0)
-    // Update 6 put a named-constraint pair ahead of the JSON Schema keywords: an id and
-    // the function it resolves to ("constraintId"/"constraintFunction" in the schema).
-    // Neither is ever set on a packet constraint, so nothing is emitted for them -- they
-    // are modelled because doDescription returns this by value and a short mirror lets
-    // BDS's sret write past the end.
     std::uint32_t mConstraintId;
     std::optional<std::string> mConstraintFunction;
 #endif
