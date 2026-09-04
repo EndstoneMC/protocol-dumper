@@ -358,6 +358,34 @@ void Visitor::visitType(const entt::meta_type &type)
         }
 #endif
 
+        // bindConst declares an enumerator on an enum factory but a fixed-value member on a compound
+        // one, and TextPacket's payloads used the latter to say which tag values select them, so the
+        // constant goes on the wire like any other member. Gone by 1.26.3.1, which constrains the
+        // tag member instead.
+        if (static_cast<std::uint16_t>(data.traits<cereal::internal::MemberTraits>()) &
+            static_cast<std::uint16_t>(cereal::internal::MemberTraits::isConstSelector)) {
+            auto field = buildField(data);
+            std::visit(
+                [&](auto &f) {
+                    using T = std::decay_t<decltype(f)>;
+                    if constexpr (std::is_same_v<T, EnumField>) {
+                        if (const auto *wire = std::get_if<std::string>(&f.type); wire && *wire == "string") {
+                            f.value = f.name;
+                            return;
+                        }
+                    }
+                    auto constant = data.get({});
+                    if (!constant || !constant.allow_cast<std::int64_t>()) {
+                        throw std::runtime_error(
+                            std::format("cannot read the constant bound to {}", descriptor->mName));
+                    }
+                    f.value = constant.cast<std::int64_t>();
+                },
+                field);
+            ty.fields.emplace_back(std::move(field));
+            continue;
+        }
+
         // Special treatment for TypeWrapper<T> - unwrap and inline
         if (data.type().is_template_specialization() &&
             data.type().template_type() == entt::resolve<entt::meta_class_template_tag<TypeWrapper>>(meta_ctx_)) {
