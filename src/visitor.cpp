@@ -311,16 +311,16 @@ void Visitor::visitEnum(const entt::meta_type &type)
         if (!descriptor) {
             throw std::runtime_error("enum member missing type descriptor");
         }
-        auto name = descriptor->mOriginalEnumName;
+        auto name = descriptor->mName;
         auto value = data.get({});
         if (!value) {
             throw std::runtime_error(std::format("Invalid enum value {} in type {}", name, type.info().name()));
         }
         if (value.allow_cast<std::int64_t>()) {
-            en.values.emplace_back(descriptor->mOriginalEnumName, value.cast<std::int64_t>());
+            en.values.emplace_back(descriptor->mName, value.cast<std::int64_t>());
         }
         else if (value.allow_cast<std::uint64_t>()) {
-            en.values.emplace_back(descriptor->mOriginalEnumName, value.cast<std::uint64_t>());
+            en.values.emplace_back(descriptor->mName, value.cast<std::uint64_t>());
         }
         else {
             throw std::runtime_error(
