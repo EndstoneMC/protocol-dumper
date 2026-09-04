@@ -69,10 +69,23 @@ class BasicSchema {
 public:
     using IdType = entt::id_type;
     using DynamicSetterArgCtor = entt::meta_type (*)(const entt::meta_ctx &);
-    // Stand-in for brstd::flat_set<OverrideState, std::less<void>, std::vector<OverrideState>>.
-    // The flat_set specialization privately inherits an associative_adapter that holds only
-    // the key container, so the layout is identical to std::vector<OverrideState>.
-    using OverridingSet = std::vector<OverrideState>;
+    // brstd::flat_set<OverrideState, std::less<void>, std::vector<OverrideState>>, which privately
+    // inherits an associative_adapter holding the key container, an empty mapped container and an
+    // empty comparator. 1.26.0 marked the two empty members [[no_unique_address]]; before that each
+    // cost a padded 8 bytes, and the nesting is what keeps them 8 apart rather than adjacent.
+    struct OverridingSet {
+        struct Empty {
+        };
+        struct Containers {
+            std::vector<OverrideState> mKeys;
+#if BEDROCK_SERVER_VERSION_HEX < BEDROCK_SERVER_VERSION_ENCODE(1, 26, 0, 0)
+            Empty mValues;
+#endif
+        } mContainers;
+#if BEDROCK_SERVER_VERSION_HEX < BEDROCK_SERVER_VERSION_ENCODE(1, 26, 0, 0)
+        Empty mCompare;
+#endif
+    };
 
     // Opaque to the dumper; only its size places the fields behind it.
     struct EnumMapping {
