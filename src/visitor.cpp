@@ -365,21 +365,29 @@ void Visitor::visitType(const entt::meta_type &type)
         if (static_cast<std::uint16_t>(data.traits<cereal::internal::MemberTraits>()) &
             static_cast<std::uint16_t>(cereal::internal::MemberTraits::isConstSelector)) {
             auto field = buildField(data);
+            auto constant = data.get({});
+            if (!constant || !constant.allow_cast<std::int64_t>()) {
+                throw std::runtime_error(std::format("cannot read the constant bound to {}", descriptor->mName));
+            }
+            const auto bound = constant.cast<std::int64_t>();
             std::visit(
                 [&](auto &f) {
                     using T = std::decay_t<decltype(f)>;
                     if constexpr (std::is_same_v<T, EnumField>) {
-                        if (const auto *wire = std::get_if<std::string>(&f.type); wire && *wire == "string") {
-                            f.value = f.name;
+                        const auto *wire = std::get_if<std::string>(&f.type);
+                        const auto *en = std::get_if<Enum>(&f.enum_type);
+                        if (wire && *wire == "string" && en) {
+                            auto it = std::ranges::find(en->values, bound,
+                                                        &std::pair<std::string, std::int64_t>::second);
+                            if (it == en->values.end()) {
+                                throw std::runtime_error(
+                                    std::format("enum {} has no value {}", en->name, bound));
+                            }
+                            f.value = it->first;
                             return;
                         }
                     }
-                    auto constant = data.get({});
-                    if (!constant || !constant.allow_cast<std::int64_t>()) {
-                        throw std::runtime_error(
-                            std::format("cannot read the constant bound to {}", descriptor->mName));
-                    }
-                    f.value = constant.cast<std::int64_t>();
+                    f.value = bound;
                 },
                 field);
             ty.fields.emplace_back(std::move(field));
