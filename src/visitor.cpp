@@ -521,22 +521,10 @@ TypeSpec Visitor::buildTypeSpec(entt::meta_type type, cereal::SerializationTrait
     if (type.is_template_specialization() &&
         type.template_type() == entt::resolve<entt::meta_class_template_tag<std::variant>>(meta_ctx_)) {
         auto spec = std::make_shared<VariantSpec>();
-        if (cereal::internal::BasicSchema::TaggedVariantDescriptor *tag = type.custom()) {
-            auto tag_type = tag->mResolve(meta_ctx_);
-            visit(tag_type);
-            spec->switch_on.type = serialization_type(meta_ctx_, tag_type, cereal::SerializationTraits::Compression);
-            if (!tag->mTaggedName.empty()) {
-                spec->switch_on.name = tag->mTaggedName;
-            }
-            if (tag_type.is_enum()) {
-                spec->switch_on.enum_type = getTypeRef(tag_type);
-            }
-        }
-        else {
-            // doSavePlainVariant forces Compression on for the index write and restores the
-            // member's traits before the alternative, so the index is always a uvarint32.
-            spec->switch_on.type = "uvarint32";
-        }
+        // doSavePlainVariant forces Compression on for the index write and restores the member's
+        // traits before the alternative, so the index is always a uvarint32. doSaveTaggedVariant
+        // hands its lambda no writer and then calls it too, so the tag is never the selector.
+        spec->switch_on = "uvarint32";
         for (auto i = 0; i < type.template_arity(); ++i) {
             spec->cases.emplace_back(buildTypeSpec(type.template_arg(i), traits));
         }
