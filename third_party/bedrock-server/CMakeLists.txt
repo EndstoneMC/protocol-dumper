@@ -48,6 +48,19 @@ set(BEDROCK_SERVER_VERSION_MINOR ${CMAKE_MATCH_2} CACHE INTERNAL "")
 set(BEDROCK_SERVER_VERSION_PATCH ${CMAKE_MATCH_3} CACHE INTERNAL "")
 set(BEDROCK_SERVER_VERSION_BUILD ${CMAKE_MATCH_4} CACHE INTERNAL "")
 
+# The channel decides how the gates in src/version.h read the build number, so a
+# mislabelled pin miscompiles the descriptor layouts rather than failing to fetch.
+# A preview build is the only one with a patch divisible by 10 and a build >= 20.
+math(EXPR _patch_mod "${BEDROCK_SERVER_VERSION_PATCH} % 10")
+if(_patch_mod EQUAL 0 AND BEDROCK_SERVER_VERSION_BUILD GREATER_EQUAL 20)
+    set(_looks_like "preview")
+else()
+    set(_looks_like "stable")
+endif()
+if(NOT _looks_like STREQUAL BEDROCK_SERVER_CHANNEL)
+    message(FATAL_ERROR "${BEDROCK_SERVER_VERSION} is a ${_looks_like} build, but BEDROCK_SERVER_CHANNEL is '${BEDROCK_SERVER_CHANNEL}'")
+endif()
+
 # minecraft.net's CDN HTTP/2-framing-errors libcurl's default UA; any browser
 # UA works. EXCLUDE_FROM_ALL keeps the 60+ MB fetch off the default build.
 # URL_HASH is intentionally absent: 'latest' is a moving target.
